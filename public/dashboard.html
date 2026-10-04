@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ro">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Dashboard RCA</title>
+    <link rel="stylesheet" href="/assets/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1>Interogari RCA</h1>
+        <p>Upload Excel, procesare secventiala, export rezultate</p>
+      </div>
+      <form method="post" action="/logout"><button class="secondary">Logout</button></form>
+    </header>
+
+    <main class="layout">
+      <section class="panel">
+        <h2>Fisier scenarii</h2>
+        <form id="upload-form">
+          <input id="file" name="file" type="file" accept=".xlsx,.csv" required />
+          <button type="submit">Porneste job</button>
+        </form>
+        <div class="actions">
+          <a class="button secondary" href="/api/template">Descarca template</a>
+          <button id="study-button" class="secondary" type="button">Ruleaza study</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Status</h2>
+        <div id="status" class="status idle">Niciun job pornit</div>
+        <progress id="progress" max="1" value="0"></progress>
+        <p id="message"></p>
+        <div class="actions">
+          <button id="resume" class="secondary hidden" type="button">Reluare dupa verificare</button>
+          <a id="download" class="button hidden" href="#">Descarca rezultat</a>
+        </div>
+      </section>
+
+      <section class="panel wide">
+        <h2>Ultimele randuri</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Rand</th>
+              <th>Status</th>
+              <th>Oferte</th>
+              <th>Minim</th>
+              <th>Eroare</th>
+            </tr>
+          </thead>
+          <tbody id="results"></tbody>
+        </table>
+      </section>
+    </main>
+
+    <script src="/assets/app.js"></script>
+  </body>
+</html>
