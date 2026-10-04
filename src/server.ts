@@ -67,11 +67,24 @@ app.get("/api/template", { preHandler: requireAuth }, async (_request, reply) =>
 });
 
 app.post("/api/jobs", { preHandler: requireAuth }, async (request, reply) => {
-  const file = await request.file();
-  if (!file) return reply.status(400).send({ error: "Lipseste fisierul" });
-  const chunks: Buffer[] = [];
-  for await (const chunk of file.file) chunks.push(Buffer.from(chunk));
-  const job = await createJob(file.filename, Buffer.concat(chunks));
+  const parts = request.parts();
+  let fileBuffer: Buffer | null = null;
+  let filename = "upload.xlsx";
+  let provider = "asigurari.ro";
+
+  for await (const part of parts) {
+    if (part.type === 'file') {
+      filename = part.filename;
+      const chunks: Buffer[] = [];
+      for await (const chunk of part.file) chunks.push(Buffer.from(chunk));
+      fileBuffer = Buffer.concat(chunks);
+    } else if (part.type === 'field' && part.fieldname === 'provider') {
+      provider = String(part.value);
+    }
+  }
+
+  if (!fileBuffer) return reply.status(400).send({ error: "Lipseste fisierul" });
+  const job = await createJob(filename, fileBuffer, provider);
   return reply.send(job);
 });
 

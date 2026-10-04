@@ -3,7 +3,6 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { config } from "../config.js";
 import { chromium } from "playwright";
-import { runScenario } from "../automation/rcaRunner.js";
 import { parseScenarioFile } from "../excel/template.js";
 import { writeResultsWorkbook } from "../export/results.js";
 import type { JobProgress, ScenarioResult } from "../types.js";
@@ -21,7 +20,7 @@ type Job = JobProgress & {
 const jobs = new Map<string, Job>();
 let activeJob: Promise<void> | null = null;
 
-export async function createJob(filename: string, input: Buffer): Promise<JobProgress> {
+export async function createJob(filename: string, input: Buffer, provider: string = "asigurari.ro"): Promise<JobProgress> {
   const id = crypto.randomUUID();
   const jobDir = path.join(config.dataDir, "jobs", id);
   await fs.mkdir(jobDir, { recursive: true });
@@ -31,6 +30,7 @@ export async function createJob(filename: string, input: Buffer): Promise<JobPro
     id,
     filename,
     input,
+    provider,
     status: "queued",
     total: 0,
     processed: 0,
@@ -118,7 +118,14 @@ async function processJob(job: Job) {
         // Add a random delay before starting the row to avoid sending all requests at the exact same millisecond
         await new Promise(r => setTimeout(r, Math.random() * 2000));
 
-        const result = await runScenario(browser, parsed.rows[index], path.join(job.jobDir, `row-${index + 2}`));
+        let result: ScenarioResult;
+        if (job.provider === 'asigurari-oneste.ro') {
+          const { runOnesteScenario } = await import("../automation/onesteRunner.js");
+          result = await runOnesteScenario(browser, parsed.rows[index], path.join(job.jobDir, `row-${index + 2}`));
+        } else {
+          const { runScenario } = await import("../automation/rcaRunner.js");
+          result = await runScenario(browser, parsed.rows[index], path.join(job.jobDir, `row-${index + 2}`));
+        }
         
         if (result.status === "waiting_for_manual_action") {
           manualActionTriggered = true;

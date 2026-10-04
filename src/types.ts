@@ -64,6 +64,7 @@ export type JobStatus =
 export type JobProgress = {
   id: string;
   status: JobStatus;
+  provider?: string;
   total: number;
   processed: number;
   currentRow?: number;

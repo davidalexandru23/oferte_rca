@@ -19,6 +19,10 @@
       <section class="panel">
         <h2>Fisier scenarii</h2>
         <form id="upload-form">
+          <select name="provider" id="provider" required>
+            <option value="asigurari.ro">asigurari.ro</option>
+            <option value="asigurari-oneste.ro">asigurari-oneste.ro</option>
+          </select>
           <input id="file" name="file" type="file" accept=".xlsx,.csv" required />
           <button type="submit">Porneste job</button>
         </form>
