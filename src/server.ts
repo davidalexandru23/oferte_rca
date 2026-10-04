@@ -8,7 +8,7 @@ import fastifyStatic from "@fastify/static";
 import Fastify from "fastify";
 import { clearSession, isAuthenticated, requireAuth, setSession, verifyPassword } from "./auth.js";
 import { assertConfig, config } from "./config.js";
-import { runStudy } from "./automation/study.js";
+import { runDebug } from "./automation/debug.js";
 import { createTemplateBuffer } from "./excel/template.js";
 import { createJob, getJob, getResultPath, resumeJob } from "./jobs/queue.js";
 
@@ -96,8 +96,8 @@ app.get<{ Params: { id: string } }>("/api/jobs/:id/result", { preHandler: requir
     .send(await fs.readFile(resultPath));
 });
 
-app.post("/api/study", { preHandler: requireAuth }, async (_request, reply) => {
-  const result = await runStudy();
+app.get("/api/debug", { preHandler: requireAuth }, async (_request, reply) => {
+  const result = await runDebug();
   return reply.send(result);
 });
 

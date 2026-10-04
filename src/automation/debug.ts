@@ -1,5 +1,3 @@
-import fs from "node:fs/promises";
-import path from "node:path";
 import { chromium, type Page } from "playwright";
 import { config } from "../config.js";
 import { rcaSelectors } from "./selectors.js";
@@ -15,8 +13,7 @@ type Candidate = {
   score: number;
 };
 
-export async function runStudy(outputDir = path.join(config.dataDir, "study")) {
-  await fs.mkdir(outputDir, { recursive: true });
+export async function runDebug() {
   const browser = await chromium.launch({ headless: config.headless });
   const page = await browser.newPage({
     locale: "ro-RO",
@@ -29,15 +26,15 @@ export async function runStudy(outputDir = path.join(config.dataDir, "study")) {
   try {
     await page.goto(config.targetUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
     await acceptEssentialCookies(page);
-    await page.screenshot({ path: path.join(outputDir, "vehicle-step.png"), fullPage: true });
-    await fs.writeFile(path.join(outputDir, "vehicle-step.html"), await page.content(), "utf8");
+    const html = await page.content();
     const candidates = await collectCandidates(page);
-    await fs.writeFile(
-      path.join(outputDir, "selectors.generated.json"),
-      JSON.stringify({ url: page.url(), generatedAt: new Date().toISOString(), candidates }, null, 2),
-      "utf8"
-    );
-    return { outputDir, candidates: candidates.length };
+    return { 
+      url: page.url(), 
+      generatedAt: new Date().toISOString(), 
+      totalCandidates: candidates.length, 
+      candidates,
+      htmlLength: html.length
+    };
   } finally {
     await browser.close();
   }
@@ -86,10 +83,10 @@ async function collectCandidates(page: Page): Promise<Candidate[]> {
   });
 }
 
-if (process.argv[1]?.endsWith("study.ts")) {
-  runStudy()
+if (process.argv[1]?.endsWith("debug.ts")) {
+  runDebug()
     .then((result) => {
-      console.log(`Study saved ${result.candidates} candidates in ${result.outputDir}`);
+      console.log(`Debug found ${result.totalCandidates} candidates.`);
     })
     .catch((error) => {
       console.error(error);

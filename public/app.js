@@ -8,7 +8,7 @@ const progressEl = document.querySelector("#progress");
 const resultsEl = document.querySelector("#results");
 const downloadEl = document.querySelector("#download");
 const resumeEl = document.querySelector("#resume");
-const studyButton = document.querySelector("#study-button");
+
 
 uploadForm.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -32,18 +32,10 @@ resumeEl.addEventListener("click", async () => {
   startPolling();
 });
 
-studyButton.addEventListener("click", async () => {
-  studyButton.disabled = true;
-  setMessage("Rulez study phase...");
-  try {
-    const response = await fetch("/api/study", { method: "POST" });
-    const payload = await response.json();
-    setMessage(`Study salvat in ${payload.outputDir} (${payload.candidates} candidati).`);
-  } catch (error) {
-    setMessage("Study phase a esuat.");
-  } finally {
-    studyButton.disabled = false;
-  }
+const debugButton = document.querySelector("#debug-button");
+
+debugButton.addEventListener("click", () => {
+  window.open("/api/debug", "_blank");
 });
 
 function startPolling() {

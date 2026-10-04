@@ -63,7 +63,7 @@ export async function runScenario(browser: import("playwright").Browser, row: Sc
     if (!offers.length) {
       return {
         status: "failed",
-        error: "Nu am gasit oferte in pagina finala. Ruleaza study si ajusteaza selectorii.",
+        error: "Nu am gasit oferte in pagina finala. Ruleaza debug si ajusteaza selectorii.",
         offers: []
       };
     }
