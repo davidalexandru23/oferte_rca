@@ -35,7 +35,7 @@ resumeEl.addEventListener("click", async () => {
 const debugButton = document.querySelector("#debug-button");
 
 debugButton.addEventListener("click", () => {
-  window.open("/api/debug", "_blank");
+  window.location.href = "/api/debug";
 });
 
 function startPolling() {
