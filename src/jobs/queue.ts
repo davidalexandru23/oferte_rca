@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { config } from "../config.js";
+import { chromium } from "playwright";
 import { runScenario } from "../automation/rcaRunner.js";
 import { parseScenarioFile } from "../excel/template.js";
 import { writeResultsWorkbook } from "../export/results.js";
@@ -92,27 +93,67 @@ async function processJob(job: Job) {
     throw new Error("Fisierul nu contine scenarii");
   }
 
-  for (let index = job.results.length; index < parsed.rows.length; index += 1) {
-    job.currentRow = index + 2;
-    job.message = `Se proceseaza randul ${index + 1}/${parsed.rows.length}`;
-    const result = await runScenario(parsed.rows[index], path.join(job.jobDir, `row-${index + 2}`));
-    if (result.status === "waiting_for_manual_action") {
-      job.status = "waiting_for_manual_action";
-      job.message = "Verificare manuala necesara. Rezolva challenge-ul si apasa Reluare.";
-      return;
+  // Pre-fill results array if empty
+  if (job.results.length === 0) {
+    job.results = Array(parsed.rows.length).fill(null);
+  }
+
+  const concurrencyLimit = 3;
+  let activeWorkers = 0;
+  let nextIndex = 0;
+  let manualActionTriggered = false;
+
+  const browser = await chromium.launch({ headless: config.headless });
+
+  try {
+    const worker = async () => {
+      while (nextIndex < parsed.rows.length && !manualActionTriggered) {
+        const index = nextIndex++;
+        // Skip already processed rows
+        if (job.results[index]) continue;
+
+        job.currentRow = index + 2;
+        job.message = `Se proceseaza in paralel (max ${concurrencyLimit})...`;
+        
+        // Add a random delay before starting the row to avoid sending all requests at the exact same millisecond
+        await new Promise(r => setTimeout(r, Math.random() * 2000));
+
+        const result = await runScenario(browser, parsed.rows[index], path.join(job.jobDir, `row-${index + 2}`));
+        
+        if (result.status === "waiting_for_manual_action") {
+          manualActionTriggered = true;
+          job.status = "waiting_for_manual_action";
+          job.message = "Verificare manuala necesara. Rezolva challenge-ul si apasa Reluare.";
+          return;
+        }
+
+        job.results[index] = result;
+        job.processed = job.results.filter(Boolean).length;
+        job.recentResults = [
+          {
+            row: index + 2,
+            status: result.status,
+            offerCount: result.offers.length,
+            minOffer: result.minOffer,
+            error: result.error
+          },
+          ...job.recentResults
+        ].slice(0, 12);
+      }
+    };
+
+    const workers = [];
+    for (let i = 0; i < concurrencyLimit; i++) {
+      workers.push(worker());
     }
-    job.results.push(result);
-    job.processed = job.results.length;
-    job.recentResults = [
-      {
-        row: index + 2,
-        status: result.status,
-        offerCount: result.offers.length,
-        minOffer: result.minOffer,
-        error: result.error
-      },
-      ...job.recentResults
-    ].slice(0, 12);
+    await Promise.all(workers);
+
+  } finally {
+    await browser.close();
+  }
+
+  if (manualActionTriggered) {
+    return; // Don't export yet
   }
 
   job.message = "Se exporta rezultatul";

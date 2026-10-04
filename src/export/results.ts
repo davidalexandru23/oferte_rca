@@ -11,27 +11,37 @@ export async function writeResultsWorkbook(
   const sheet = workbook.getWorksheet(sheetName) ?? workbook.worksheets[0];
   if (!sheet) throw new Error("Workbook fara worksheet pentru export");
 
-  const insurers = Array.from(
-    new Set(results.flatMap((result) => result.offers.map((offer) => slug(offer.insurer))))
+  const offerKeys = Array.from(
+    new Set(results.flatMap((result) => result.offers.map((offer) => slug(`${offer.insurer}_${offer.details}`))))
   ).sort();
+  
+  // Create a mapping from offerKey to original names for the header
+  const headerNames = new Map<string, string>();
+  results.forEach(res => {
+    res.offers.forEach(o => {
+      const key = slug(`${o.insurer}_${o.details}`);
+      if (!headerNames.has(key)) {
+        headerNames.set(key, `${o.insurer} ${o.details}`);
+      }
+    });
+  });
+
   const headers = [
     ...scenarioColumns,
     ...fixedResultColumns,
-    ...insurers.map((insurer) => `pret_${insurer}`),
-    ...insurers.map((insurer) => `detalii_${insurer}`)
+    ...offerKeys.map((key) => `pret_${headerNames.get(key)}`)
   ];
 
   sheet.getRow(1).values = headers;
   results.forEach((result, index) => {
     const row = sheet.getRow(index + 2);
-    const byInsurer = new Map(result.offers.map((offer) => [slug(offer.insurer), offer]));
+    const byOfferKey = new Map(result.offers.map((offer) => [slug(`${offer.insurer}_${offer.details}`), offer]));
     const values = [
       result.status,
       result.error ?? "",
       result.reference ?? "",
       result.minOffer ?? "",
-      ...insurers.map((insurer) => byInsurer.get(insurer)?.price ?? ""),
-      ...insurers.map((insurer) => byInsurer.get(insurer)?.details ?? "")
+      ...offerKeys.map((key) => byOfferKey.get(key)?.price ?? "")
     ];
     values.forEach((value, offset) => {
       row.getCell(scenarioColumns.length + offset + 1).value = value;

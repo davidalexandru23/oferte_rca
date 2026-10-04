@@ -43,8 +43,14 @@ async function main() {
   };
   
   console.log("Running scenario...");
-  const result = await runScenario(row as any, jobDir);
-  console.log("Result:", result);
+  const { chromium } = await import("playwright");
+  const browser = await chromium.launch({ headless: config.headless });
+  try {
+    const result = await runScenario(browser, row as any, jobDir);
+    console.log("Result:", result);
+  } finally {
+    await browser.close();
+  }
 }
 
 main().catch(console.error);

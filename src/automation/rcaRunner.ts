@@ -12,9 +12,8 @@ export class ManualActionRequired extends Error {
   }
 }
 
-export async function runScenario(row: ScenarioRow, jobDir: string): Promise<ScenarioResult> {
+export async function runScenario(browser: import("playwright").Browser, row: ScenarioRow, jobDir: string): Promise<ScenarioResult> {
   await fs.mkdir(jobDir, { recursive: true });
-  const browser = await chromium.launch({ headless: config.headless });
   const context = await browser.newContext({
     locale: "ro-RO",
     timezoneId: "Europe/Bucharest",
@@ -85,7 +84,7 @@ export async function runScenario(row: ScenarioRow, jobDir: string): Promise<Sce
       offers: []
     };
   } finally {
-    await browser.close();
+    await context.close();
   }
 }
 
