@@ -114,40 +114,97 @@ export async function runOnesteScenario(browser: Browser, row: ScenarioRow, jobD
     updateProgress?.({ status: 'running', message: 'Pasul 5: Se obțin ofertele RCA...' });
     
     // Fill Date of Start
-    await page.getByLabel('Data de începere a poliței *').click().catch(()=>{});
+    await page.getByLabel('Data de începere a poliței').click({ timeout: 2000 }).catch(()=>{});
     await page.waitForTimeout(500);
-    // Usually tomorrow is good, or today. We can just type 01 Ianuarie 2026 for now, or just try to leave it if it's default. But it's mandatory.
-    // In excel we have data_start_polita, if missing use a fixed date tomorrow
-    const dataStart = row.data_start_polita || '01 Decembrie 2024'; 
-    await page.keyboard.type(dataStart, { delay: 50 });
+    // Use tomorrow's date
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const months = ['Ianuarie','Februarie','Martie','Aprilie','Mai','Iunie','Iulie','August','Septembrie','Octombrie','Noiembrie','Decembrie'];
+    const dateStr = `${tomorrow.getDate()} ${months[tomorrow.getMonth()]} ${tomorrow.getFullYear()}`;
+    await page.keyboard.type(dateStr, { delay: 30 });
     await page.waitForTimeout(500);
     await page.keyboard.press('Enter');
-
-    await page.locator('text="Durata poliței *"').locator('~ div').click({ timeout: 2000 }).catch(()=>{});
-    await page.waitForTimeout(300);
-    await page.keyboard.press('ArrowDown'); // 12 luni
-    await page.keyboard.press('Enter');
     
-    await page.locator('text="Utilizarea vehiculului *"').locator('~ div').click({ timeout: 2000 }).catch(()=>{});
-    await page.waitForTimeout(300);
-    await page.keyboard.press('ArrowDown'); // Interes personal
-    await page.keyboard.press('Enter');
+    // Duration
+    await page.getByLabel('Durata poliței').click({ timeout: 2000 }).catch(()=>{});
+    await page.waitForTimeout(500);
+    await page.getByRole('option', { name: '12 luni' }).click({ timeout: 2000 }).catch(async ()=>{
+      await page.keyboard.type('12', { delay: 50 });
+      await page.keyboard.press('ArrowDown');
+      await page.keyboard.press('Enter');
+    });
     
-    // Check the two checkboxes
-    await page.locator('input[type="checkbox"]').nth(1).check({ force: true }).catch(()=>{});
-    await page.locator('input[type="checkbox"]').nth(2).check({ force: true }).catch(()=>{});
+    // Usage type
+    await page.getByLabel('Utilizarea vehiculului').click({ timeout: 2000 }).catch(()=>{});
+    await page.waitForTimeout(500);
+    await page.getByRole('option').first().click({ timeout: 2000 }).catch(async ()=>{
+      await page.keyboard.press('ArrowDown');
+      await page.keyboard.press('Enter');
+    });
     
-    await page.locator('button:has-text("Către oferte") >> visible=true').click({ timeout: 5000 }).catch(()=>{});
+    // Checkboxes - accept and perjury
+    const checkboxes = page.locator('input[type="checkbox"]');
+    const count = await checkboxes.count();
+    for (let i = 0; i < count; i++) {
+      await checkboxes.nth(i).check({ force: true }).catch(()=>{});
+    }
     
-    await page.waitForTimeout(15000); // wait for calculation
+    await page.locator('button:has-text("Către oferte")').click({ timeout: 5000 }).catch(()=>{});
+    
+    updateProgress?.({ status: 'running', message: 'Se așteaptă ofertele...' });
+    await page.waitForTimeout(20000); // wait for calculation
     
     // Save final state
     await page.screenshot({ path: path.join(jobDir, 'oneste-final.png'), fullPage: true });
 
+    // Extract offers
+    const offers = await page.evaluate(() => {
+      const results: any[] = [];
+      const offerCards = document.querySelectorAll('.mantine-Card-root');
+      
+      offerCards.forEach(card => {
+        const text = card.textContent || '';
+        if (text.includes('RCA') && text.includes('lei')) {
+           const priceMatch = text.match(/([\d,.]+)\s*lei/i);
+           const price = priceMatch ? parseFloat(priceMatch[1].replace(/,/g, '')) : 0;
+           
+           // Simple heuristic for provider name
+           let provider = 'Unknown';
+           const lowerText = text.toLowerCase();
+           if (lowerText.includes('grawe')) provider = 'Grawe';
+           else if (lowerText.includes('groupama')) provider = 'Groupama';
+           else if (lowerText.includes('allianz')) provider = 'Allianz';
+           else if (lowerText.includes('asirom')) provider = 'Asirom';
+           else if (lowerText.includes('generali')) provider = 'Generali';
+           else if (lowerText.includes('omniasig')) provider = 'Omniasig';
+           else if (lowerText.includes('hellas') || lowerText.includes('hd')) provider = 'Hellas Direct';
+           else if (lowerText.includes('axon')) provider = 'Axon';
+           else if (lowerText.includes('ehi')) provider = 'EHI';
+           
+           if (price > 0) {
+              results.push({ provider, price });
+           }
+        }
+      });
+      return results;
+    });
+
+    if (offers.length === 0) {
+       return {
+          status: 'failed',
+          error: 'Nu s-au putut extrage ofertele. Verifică oneste-final.png.',
+          offers: []
+       };
+    }
+
+    const minOfferObj = offers.reduce((prev, curr) => prev.price < curr.price ? prev : curr);
+    const minOfferStr = `${minOfferObj.provider} - ${minOfferObj.price} lei`;
+
     return {
-      status: 'failed',
-      error: 'Implementarea a ajuns la final. Verifică oneste-final.png pentru a vedea ofertele extrase.',
-      offers: []
+      status: 'success',
+      reference: '',
+      minOffer: minOfferStr,
+      offers: offers.map(o => ({ insurer: o.provider, price: `${o.price} lei` }))
     };
 
   } catch (error: any) {
@@ -162,4 +219,3 @@ export async function runOnesteScenario(browser: Browser, row: ScenarioRow, jobD
     await context.close();
   }
 }
-// Add this placeholder to check if we need to append step 5 later
