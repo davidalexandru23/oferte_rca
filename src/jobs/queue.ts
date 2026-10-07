@@ -219,3 +219,16 @@ function publicJob(job: Job): JobProgress {
     recentResults: job.recentResults
   };
 }
+
+export async function cancelAllActiveJobs() {
+  for (const job of jobs.values()) {
+    if (["running", "queued", "waiting_for_manual_action"].includes(job.status)) {
+      job.cancelled = true;
+      job.status = "cancelled";
+      job.message = "Job oprit manual.";
+      if (job.browser) {
+        job.browser.close().catch(() => {});
+      }
+    }
+  }
+}

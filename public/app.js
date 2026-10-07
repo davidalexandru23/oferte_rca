@@ -35,11 +35,10 @@ resumeEl.addEventListener("click", async () => {
 
 
 stopEl.addEventListener("click", async () => {
-  if (!currentJobId) return;
-  const response = await fetch(`/api/jobs/${currentJobId}/cancel`, { method: "POST" });
-  const payload = await response.json();
-  renderJob(payload);
-  startPolling();
+  await fetch("/api/jobs/cancel-active", { method: "POST" });
+  currentJobId = null;
+  clearInterval(pollTimer);
+  renderJob({ status: "cancelled", message: "Toate joburile active au fost oprite." });
 });
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -80,7 +79,7 @@ function renderJob(job) {
   resumeEl.classList.toggle("hidden", job.status !== "waiting_for_manual_action");
   
   if (job.status === "completed" || job.status === "cancelled") { downloadEl.href = `/api/jobs/${job.id}/result`; downloadEl.classList.remove("hidden"); }
-  stopEl.classList.toggle("hidden", !["running", "queued", "waiting_for_manual_action"].includes(job.status));
+  stopEl.classList.remove("hidden"); // Always show stop button just in case
   resultsEl.innerHTML = (job.recentResults || [])
     .map(
       (row) => `<tr>

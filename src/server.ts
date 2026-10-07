@@ -10,7 +10,7 @@ import { clearSession, isAuthenticated, requireAuth, setSession, verifyPassword 
 import { assertConfig, config } from "./config.js";
 import { runDebug } from "./automation/debug.js";
 import { createTemplateBuffer } from "./excel/template.js";
-import { createJob, getJob, getResultPath, resumeJob, getActiveJob, cancelJob } from "./jobs/queue.js";
+import { createJob, getJob, getResultPath, resumeJob, getActiveJob, cancelJob, cancelAllActiveJobs } from "./jobs/queue.js";
 
 assertConfig();
 
@@ -93,6 +93,12 @@ app.get("/api/jobs/active", { preHandler: requireAuth }, async (_request, reply)
   const job = getActiveJob();
   if (!job) return reply.status(404).send({ error: "Niciun job activ" });
   return reply.send(job);
+});
+
+
+app.post("/api/jobs/cancel-active", { preHandler: requireAuth }, async (_request, reply) => {
+  await cancelAllActiveJobs();
+  return reply.send({ success: true });
 });
 
 app.post<{ Params: { id: string } }>("/api/jobs/:id/cancel", { preHandler: requireAuth }, async (request, reply) => {
