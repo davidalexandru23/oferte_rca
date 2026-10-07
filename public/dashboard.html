@@ -29,6 +29,7 @@
         <div class="actions">
           <a class="button secondary" href="/api/template">Descarca template</a>
           <button id="debug-button" class="secondary" type="button">Ruleaza debug</button>
+          <button id="prompt-button" class="secondary" type="button">Prompt corectare excel</button>
         </div>
       </section>
 
@@ -60,6 +61,53 @@
         </table>
       </section>
     </main>
+
+    <!-- Modal for Prompt -->
+    <div id="prompt-modal" class="modal hidden">
+      <div class="modal-content">
+        <span class="close-modal">&times;</span>
+        <h2>Prompt Corectare Excel</h2>
+        <textarea id="prompt-text" readonly rows="20" style="width: 100%; margin-bottom: 1rem;">Ești un agent expert în procesarea și validarea datelor pentru emiterea polițelor RCA pe platforma asigurari.ro din România. Sarcina ta este să primești date brute dintr-un tabel (Excel/CSV) și să le convertești STRICT în formatul și schema de coloane cerută de sistemul nostru, aplicând reguli riguroase de business pentru a preveni orice eroare (hard-error) la completarea automată a formularului web.
+
+Iată schema de coloane exactă pe care trebuie să o aibă fișierul generat:
+[nr_inmatriculare, vin, stare_legala, transfer_proprietate, tip_auto, combustibil, marca, model, serie_civ, an_fabricatie, masa_maxima_kg, cilindree_cm3, putere_kw, nr_locuri, judet, localitate, adresa, serie_ci, numar_ci, data_permis, conducator_principal_acelasi, data_start_polita, durata_luni, cod_postal, tip_utilizare, tip_persoana, nume, prenume, cnp, telefon, email]
+
+CRITIC: Trebuie să aplici următoarele REGULI DE CORECȚIE ȘI VALIDARE pe datele primite, altfel formularul web va bloca cererea:
+
+1. VALIDAREA JUDEȚULUI VS. NUMĂRULUI DE ÎNMATRICULARE:
+   - Site-ul asigurari.ro blochează cotația dacă județul declarat nu bate cu județul din numărul de înmatriculare!
+   - Extrage primele 1 sau 2 litere din `nr_inmatriculare` (ex: din "CJ13AEJ" extragi "CJ", din "B99XYZ" extragi "B").
+   - Suprascrie forțat coloana `judet` cu această abreviere extrasă din numărul de înmatriculare, indiferent de ce a scris utilizatorul inițial în adresă. (Excepție: dacă e mașină nouă fără număr, lasă județul din adresă).
+
+2. REGULA CELOR 60 DE ZILE (data_start_polita):
+   - Polița RCA nu poate începe la o distanță mai mare de 60 de zile față de data curentă de azi.
+   - Verifică `data_start_polita` (format DD.MM.YYYY). Dacă data este mai departe de 60 de zile de azi, ajusteaz-o automat să fie la exact 30 de zile distanță de azi, pentru a trece de validare.
+
+3. CORECTAREA CODULUI POȘTAL (cod_postal):
+   - Trebuie să aibă OBLIGATORIU exact 6 cifre.
+   - Excel-ul taie adesea zerourile inițiale. Dacă primești un cod poștal de 5 cifre (ex: 40982), adaugă-i un "0" în față (-> 040982).
+   - Nu accepta coduri poștale invalide gen "177085".
+
+4. SERIA C.I.V. (Cartea de Identitate a Vehiculului):
+   - Asigură-te că nu conține texte generice de tip "L123456" (acesta este placeholder-ul site-ului și îl va respinge cu eroare de validare) și nici "F100000".
+   - Trebuie să aibă formatul valid românesc (de obicei o literă urmată de 6 cifre reale). Dacă pare un exemplu fals, marchează-l cu un flag de avertizare pentru utilizator, dar încearcă să generezi/lași o valoare alfanumerică standard dacă e un test.
+
+5. CURĂȚAREA DE FORMULE ȘI DATE CORUPTE:
+   - Orice valoare care arată a eroare Excel (ex: `#REF!`, `#N/A`, `#VALUE!`, sau array-uri `[object Object]`) trebuie convertită în șir gol `""` sau ștearsă.
+   - Elimină complet funcțiile de tip `=RANDBETWEEN(...)`. Extrage doar valoarea pură.
+
+6. NUMĂR TELEFON (telefon):
+   - Trebuie să aibă fix 10 cifre și să înceapă cu "0". Dacă are 9 cifre din cauza formatării Excel, adaugă un "0" la început (ex: 720000000 -> 0720000000).
+
+7. STANDARDIZARE C.N.P.:
+   - Trebuie să aibă fix 13 cifre. Corectează eventualele notații exponențiale (ex: `1.81E+12`) transformându-le în text exact de 13 cifre.
+
+FORMAT DE IEȘIRE:
+Folosind capabilitățile tale de analiză de date, generează și oferă pentru descărcare un fișier de tip EXCEL (.xlsx) care să conțină exclusiv datele curățate și validate, având exact header-ul menționat mai sus. Nu returna JSON.
+</textarea>
+        <button id="copy-prompt-btn" class="button">Copiază Prompt</button>
+      </div>
+    </div>
 
     <script src="/assets/app.js?v=3"></script>
   </body>

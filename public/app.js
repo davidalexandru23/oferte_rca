@@ -103,3 +103,35 @@ function escapeHtml(value) {
     return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char];
   });
 }
+
+// Prompt Modal Logic
+const promptBtn = document.getElementById('prompt-button');
+const promptModal = document.getElementById('prompt-modal');
+const closeModal = document.querySelector('.close-modal');
+const copyPromptBtn = document.getElementById('copy-prompt-btn');
+const promptText = document.getElementById('prompt-text');
+
+if (promptBtn && promptModal) {
+  promptBtn.addEventListener('click', () => {
+    promptModal.classList.remove('hidden');
+  });
+
+  closeModal.addEventListener('click', () => {
+    promptModal.classList.add('hidden');
+  });
+
+  window.addEventListener('click', (event) => {
+    if (event.target === promptModal) {
+      promptModal.classList.add('hidden');
+    }
+  });
+
+  copyPromptBtn.addEventListener('click', () => {
+    promptText.select();
+    document.execCommand('copy');
+    copyPromptBtn.textContent = 'Copiat!';
+    setTimeout(() => {
+      copyPromptBtn.textContent = 'Copiază Prompt';
+    }, 2000);
+  });
+}
