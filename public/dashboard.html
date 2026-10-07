@@ -102,6 +102,9 @@ CRITIC: Trebuie să aplici următoarele REGULI DE CORECȚIE ȘI VALIDARE pe date
 7. STANDARDIZARE C.N.P.:
    - Trebuie să aibă fix 13 cifre. Corectează eventualele notații exponențiale (ex: `1.81E+12`) transformându-le în text exact de 13 cifre.
 
+8. STANDARDIZARE LOCALITATE BUCUREȘTI (localitate):
+   - Dacă `localitate` este un sector din București (ex: "Sector 4", "S4", "Sectorul 1"), trebuie convertit STRICT în formatul acceptat de site: "Bucuresti Sectorul 1", "Bucuresti Sectorul 2", "Bucuresti Sectorul 3", "Bucuresti Sectorul 4", "Bucuresti Sectorul 5", sau "Bucuresti Sectorul 6".
+
 FORMAT DE IEȘIRE:
 Folosind capabilitățile tale de analiză de date, generează și oferă pentru descărcare un fișier de tip EXCEL (.xlsx) care să conțină exclusiv datele curățate și validate, având exact header-ul menționat mai sus. Nu returna JSON.
 </textarea>
