@@ -196,7 +196,7 @@ async function trySelectByLabel(page: Page, label: string, value: string) {
   const locators = [
     page.getByLabel(label, { exact: true }),
     page.getByLabel(strictRegex),
-    page.locator(`xpath=//*[translate(normalize-space(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZĂÂÎȘŞȚŢ', 'abcdefghijklmnopqrstuvwxyzăâîșşțţ') = "${label.toLowerCase()}" or translate(normalize-space(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZĂÂÎȘŞȚŢ', 'abcdefghijklmnopqrstuvwxyzăâîșşțţ') = "${label.toLowerCase()} *"]/following::select[1]`)
+    page.locator(`xpath=//*[contains(translate(normalize-space(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZĂÂÎȘŞȚŢ', 'abcdefghijklmnopqrstuvwxyzăâîșşțţ'), "${label.toLowerCase()}")]/following::select[1]`)
   ];
   for (const locator of locators) {
     const count = await locator.count().catch(() => 0);
@@ -206,7 +206,7 @@ async function trySelectByLabel(page: Page, label: string, value: string) {
       if (tag !== "select") continue;
       
       const isContainerVisible = await select.evaluate((element) => {
-        const container = element.closest('.broker_form_field_small, .broker_form_field, .form-group, .form-group-flex, .row');
+        const container = element.closest('.broker_form_field_small, .broker_form_field, .form-group, .form-group-flex, .row, .col-sm-6, .col-md-6, .mb-3, .mb-4, .input-group, div[class*="col-"]');
         if (!container) return false;
         return (container as HTMLElement).offsetParent !== null;
       }).catch(() => false);
@@ -281,7 +281,7 @@ function labelProximityInput(page: Page, label: string) {
   const lowerLabel = label.toLowerCase();
   return page
     .locator(
-      `xpath=//*[translate(normalize-space(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZĂÂÎȘŞȚŢ', 'abcdefghijklmnopqrstuvwxyzăâîșşțţ')="${lowerLabel}" or translate(normalize-space(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZĂÂÎȘŞȚŢ', 'abcdefghijklmnopqrstuvwxyzăâîșşțţ')="${lowerLabel} *"]/following::input[1]`
+      `xpath=//*[contains(translate(normalize-space(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZĂÂÎȘŞȚŢ', 'abcdefghijklmnopqrstuvwxyzăâîșşțţ'), "${lowerLabel}")]/following::input[1]`
     )
     .first();
 }
