@@ -147,13 +147,8 @@ async function processJob(job: Job) {
         await new Promise(r => setTimeout(r, Math.random() * 2000));
 
         let result: ScenarioResult;
-        if (job.provider === 'asigurari-oneste.ro') {
-          const { runOnesteScenario } = await import("../automation/onesteRunner.js");
-          result = await runOnesteScenario(browser, parsed.rows[index], path.join(job.jobDir, `row-${index + 2}`));
-        } else {
-          const { runScenario } = await import("../automation/rcaRunner.js");
-          result = await runScenario(browser, parsed.rows[index], path.join(job.jobDir, `row-${index + 2}`));
-        }
+        const { runScenario } = await import("../automation/rcaRunner.js");
+        result = await runScenario(browser, parsed.rows[index], path.join(job.jobDir, `row-${index + 2}`));
         
         if (result.status === "waiting_for_manual_action") {
           manualActionTriggered = true;
