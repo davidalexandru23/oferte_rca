@@ -90,7 +90,7 @@ CRITIC: Trebuie să aplici următoarele REGULI DE CORECȚIE ȘI VALIDARE pe date
 
 4. SERIA C.I.V. (Cartea de Identitate a Vehiculului):
    - Asigură-te că nu conține texte generice de tip "L123456" (acesta este placeholder-ul site-ului și îl va respinge cu eroare de validare) și nici "F100000".
-   - Trebuie să aibă formatul valid românesc (de obicei o literă urmată de 6 cifre reale). Dacă pare un exemplu fals, marchează-l cu un flag de avertizare pentru utilizator, dar încearcă să generezi/lași o valoare alfanumerică standard dacă e un test.
+   - Trebuie să aibă formatul valid românesc (de obicei o literă urmată de 6 cifre reale). Dacă detectezi că valoarea este falsă, generică sau pare a fi un placeholder, înlocuiește-o AUTOMAT cu valoarea exactă: J125354
 
 5. CURĂȚAREA DE FORMULE ȘI DATE CORUPTE:
    - Orice valoare care arată a eroare Excel (ex: `#REF!`, `#N/A`, `#VALUE!`, sau array-uri `[object Object]`) trebuie convertită în șir gol `""` sau ștearsă.
