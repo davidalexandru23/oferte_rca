@@ -182,10 +182,16 @@ async function tryFillByLabel(page: Page, label: string, value: string) {
     const className = await target.evaluate((element) => element.className).catch(() => "");
     const isDisabled = await target.evaluate((element) => (element as any).disabled).catch(() => false);
     if (tag === "select" || className.includes("select2-offscreen") || isDisabled) continue;
-    await target.fill(value, { timeout: 2500 }).catch(async () => {
-      await target.click({ timeout: 2500 });
-      await target.pressSequentially(value, { delay: 35 });
-    });
+    try {
+      await target.fill(value, { timeout: 2500 });
+    } catch {
+      try {
+        await target.click({ timeout: 2500 });
+        await target.pressSequentially(value, { delay: 35 });
+      } catch {
+        continue;
+      }
+    }
     return true;
   }
   return false;
@@ -196,7 +202,7 @@ async function trySelectByLabel(page: Page, label: string, value: string) {
   const locators = [
     page.getByLabel(label, { exact: true }),
     page.getByLabel(strictRegex),
-    page.locator(`xpath=//*[contains(translate(normalize-space(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZĂÂÎȘŞȚŢ', 'abcdefghijklmnopqrstuvwxyzăâîșşțţ'), "${label.toLowerCase()}")]/following::select[1]`)
+    page.locator(`xpath=//*[translate(normalize-space(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZĂÂÎȘŞȚŢ', 'abcdefghijklmnopqrstuvwxyzăâîșşțţ') = "${label.toLowerCase()}" or translate(normalize-space(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZĂÂÎȘŞȚŢ', 'abcdefghijklmnopqrstuvwxyzăâîșşțţ') = "${label.toLowerCase()} *"]/following::select[1]`)
   ];
   for (const locator of locators) {
     const count = await locator.count().catch(() => 0);
@@ -281,7 +287,7 @@ function labelProximityInput(page: Page, label: string) {
   const lowerLabel = label.toLowerCase();
   return page
     .locator(
-      `xpath=//*[contains(translate(normalize-space(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZĂÂÎȘŞȚŢ', 'abcdefghijklmnopqrstuvwxyzăâîșşțţ'), "${lowerLabel}")]/following::input[1]`
+      `xpath=//*[translate(normalize-space(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZĂÂÎȘŞȚŢ', 'abcdefghijklmnopqrstuvwxyzăâîșşțţ')="${lowerLabel}" or translate(normalize-space(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZĂÂÎȘŞȚŢ', 'abcdefghijklmnopqrstuvwxyzăâîșşțţ')="${lowerLabel} *"]/following::input[1]`
     )
     .first();
 }
