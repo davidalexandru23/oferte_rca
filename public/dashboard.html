@@ -105,6 +105,10 @@ CRITIC: Trebuie să aplici următoarele REGULI DE CORECȚIE ȘI VALIDARE pe date
 8. STANDARDIZARE LOCALITATE BUCUREȘTI (localitate):
    - Dacă `localitate` este un sector din București (ex: "Sector 4", "S4", "Sectorul 1"), trebuie convertit STRICT în formatul acceptat de site: "Bucuresti Sectorul 1", "Bucuresti Sectorul 2", "Bucuresti Sectorul 3", "Bucuresti Sectorul 4", "Bucuresti Sectorul 5", sau "Bucuresti Sectorul 6".
 
+9. CURĂȚAREA MODELULUI AUTO (model):
+   - Păstrează exclusiv denumirea comercială principală a modelului (ex: "Sandero", "A5", "A7", "Focus", "Fiesta", "Logan").
+   - Elimină complet orice coduri tehnice, terminologii extra, dotări sau caractere fără sens asociate (ex: elimină balast de tipul "AJHDA 667", "1.5 dCi", "Trend", etc.). Modelul trebuie să fie cât mai simplu și standard.
+
 FORMAT DE IEȘIRE:
 Folosind capabilitățile tale de analiză de date, generează și oferă pentru descărcare un fișier de tip EXCEL (.xlsx) care să conțină exclusiv datele curățate și validate, având exact header-ul menționat mai sus. Nu returna JSON.
 </textarea>
