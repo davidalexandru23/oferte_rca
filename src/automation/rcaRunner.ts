@@ -145,9 +145,57 @@ async function fillRcaFlow(page: Page, row: ScenarioRow) {
   }
 }
 
+const countyMap: Record<string, string> = {
+  "AB": "Alba",
+  "AR": "Arad",
+  "AG": "Argeș",
+  "BC": "Bacău",
+  "BH": "Bihor",
+  "BN": "Bistrița-Năsăud",
+  "BT": "Botoșani",
+  "BV": "Brașov",
+  "BR": "Brăila",
+  "B": "București",
+  "BZ": "Buzău",
+  "CS": "Caraș-Severin",
+  "CL": "Călărași",
+  "CJ": "Cluj",
+  "CT": "Constanța",
+  "CV": "Covasna",
+  "DB": "Dâmbovița",
+  "DJ": "Dolj",
+  "GL": "Galați",
+  "GR": "Giurgiu",
+  "GJ": "Gorj",
+  "HR": "Harghita",
+  "HD": "Hunedoara",
+  "IL": "Ialomița",
+  "IS": "Iași",
+  "IF": "Ilfov",
+  "MM": "Maramureș",
+  "MH": "Mehedinți",
+  "MS": "Mureș",
+  "NT": "Neamț",
+  "OT": "Olt",
+  "PH": "Prahova",
+  "SM": "Satu Mare",
+  "SJ": "Sălaj",
+  "SB": "Sibiu",
+  "SV": "Suceava",
+  "TR": "Teleorman",
+  "TM": "Timiș",
+  "TL": "Tulcea",
+  "VS": "Vaslui",
+  "VL": "Vâlcea",
+  "VN": "Vrancea"
+};
+
 async function fillField(page: Page, column: ScenarioColumn, value: string): Promise<boolean> {
   const fields: Partial<Record<ScenarioColumn, readonly string[]>> = rcaSelectors.fields;
   const labels = fields[column] ?? [];
+  if (column === 'judet' && countyMap[value.toUpperCase()]) {
+    value = countyMap[value.toUpperCase()];
+  }
   for (const label of labels) {
     if (await tryFillByLabel(page, label, value)) {
       console.log(`[fillField] SUCCESS (fill): ${column} -> ${value}`);
@@ -224,14 +272,16 @@ async function trySelectByLabel(page: Page, label: string, value: string) {
         
         var foundOption = items.find(function(item) {
           var text = (item.textContent || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim();
-          return text === wantedNorm;
+          var val = (item.getAttribute("value") || "").toLowerCase().trim();
+          return text === wantedNorm || val === wantedNorm;
         });
         
         if (!foundOption) {
           foundOption = items.find(function(item) {
             var text = (item.textContent || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim();
-            if (text.includes(wantedNorm)) return true;
-            if (wantedNorm.startsWith(text) && text.length >= 4) return true;
+            var val = (item.getAttribute("value") || "").toLowerCase().trim();
+            if (text.includes(wantedNorm) || val.includes(wantedNorm)) return true;
+            if ((wantedNorm.startsWith(text) && text.length >= 4) || (wantedNorm.startsWith(val) && val.length >= 2)) return true;
             return false;
           });
         }
