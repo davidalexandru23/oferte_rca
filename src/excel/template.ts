@@ -113,7 +113,7 @@ function validateHeaders(headers: string[]) {
   }
 }
 
-function normalizeCell(value: unknown) {
+function normalizeCell(value: any): string {
   if (value == null) return "";
   if (value instanceof Date) {
     const d = value.getDate().toString().padStart(2, '0');
@@ -121,11 +121,20 @@ function normalizeCell(value: unknown) {
     const y = value.getFullYear();
     return `${d}.${m}.${y}`;
   }
-  if (typeof value === "object" && "text" in value && typeof value.text === "string") {
-    return value.text.trim();
-  }
-  if (typeof value === "object" && "result" in value) {
-    return normalizeCell(value.result);
+  if (typeof value === "object") {
+    if ("text" in value && typeof value.text === "string") {
+      return value.text.trim();
+    }
+    if ("richText" in value && Array.isArray(value.richText)) {
+      return value.richText.map((t: any) => t.text).join("").trim();
+    }
+    if ("result" in value) {
+      return normalizeCell(value.result);
+    }
+    if ("error" in value) {
+      return ""; // ignore #REF! errors
+    }
+    return ""; // fallback for unknown objects instead of "[object Object]"
   }
   return String(value).trim();
 }
