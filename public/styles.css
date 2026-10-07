@@ -194,3 +194,17 @@ th {
     margin-bottom: 16px;
   }
 }
+
+.stop-btn {
+  background: var(--danger);
+  color: #ffffff;
+}
+
+.stop-btn:hover {
+  background: #901610;
+}
+
+.status.cancelled {
+  background: #fdf2e9;
+  color: #d97706;
+}

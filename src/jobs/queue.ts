@@ -15,6 +15,8 @@ type Job = JobProgress & {
   rows?: Awaited<ReturnType<typeof parseScenarioFile>>["rows"];
   results: ScenarioResult[];
   jobDir: string;
+  cancelled?: boolean;
+  browser?: import("playwright").Browser;
 };
 
 const jobs = new Map<string, Job>();
@@ -40,6 +42,31 @@ export async function createJob(filename: string, input: Buffer, provider: strin
   };
   jobs.set(id, job);
   pump();
+  return publicJob(job);
+}
+
+
+export function getActiveJob() {
+  for (const job of jobs.values()) {
+    if (["running", "queued", "waiting_for_manual_action"].includes(job.status)) {
+      return publicJob(job);
+    }
+  }
+  return null;
+}
+
+export async function cancelJob(id: string) {
+  const job = jobs.get(id);
+  if (!job) return null;
+  job.cancelled = true;
+  if (job.status === "queued" || job.status === "waiting_for_manual_action") {
+    job.status = "cancelled";
+    job.message = "Job oprit manual.";
+    pump(); // start next if any
+  }
+  if (job.browser) {
+    job.browser.close().catch(() => {});
+  }
   return publicJob(job);
 }
 
@@ -104,10 +131,11 @@ async function processJob(job: Job) {
   let manualActionTriggered = false;
 
   const browser = await chromium.launch({ headless: config.headless });
+  job.browser = browser;
 
   try {
     const worker = async () => {
-      while (nextIndex < parsed.rows.length && !manualActionTriggered) {
+      while (nextIndex < parsed.rows.length && !manualActionTriggered && !job.cancelled) {
         const index = nextIndex++;
         // Skip already processed rows
         if (job.results[index]) continue;
@@ -162,14 +190,20 @@ async function processJob(job: Job) {
   if (manualActionTriggered) {
     return; // Don't export yet
   }
+  if (job.cancelled) {
+    job.status = "cancelled";
+    job.message = "Job oprit manual. Se exporta rezultatele partiale...";
+  }
 
   job.message = "Se exporta rezultatul";
   const output = await writeResultsWorkbook(parsed.workbook, parsed.sheetName, job.results);
   const resultPath = path.join(job.jobDir, "rezultate-rca.xlsx");
   await fs.writeFile(resultPath, output);
   job.resultPath = resultPath;
-  job.status = "completed";
-  job.message = "Finalizat";
+  if (!job.cancelled) {
+    job.status = "completed";
+    job.message = "Finalizat";
+  }
 }
 
 function publicJob(job: Job): JobProgress {

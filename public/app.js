@@ -8,6 +8,7 @@ const progressEl = document.querySelector("#progress");
 const resultsEl = document.querySelector("#results");
 const downloadEl = document.querySelector("#download");
 const resumeEl = document.querySelector("#resume");
+const stopEl = document.querySelector("#stop");
 
 
 uploadForm.addEventListener("submit", async (event) => {
@@ -32,6 +33,25 @@ resumeEl.addEventListener("click", async () => {
   startPolling();
 });
 
+
+stopEl.addEventListener("click", async () => {
+  if (!currentJobId) return;
+  const response = await fetch(`/api/jobs/${currentJobId}/cancel`, { method: "POST" });
+  const payload = await response.json();
+  renderJob(payload);
+  startPolling();
+});
+
+document.addEventListener("DOMContentLoaded", async () => {
+  const response = await fetch("/api/jobs/active");
+  if (response.ok) {
+    const payload = await response.json();
+    currentJobId = payload.id;
+    renderJob(payload);
+    startPolling();
+  }
+});
+
 const debugButton = document.querySelector("#debug-button");
 
 debugButton.addEventListener("click", () => {
@@ -45,7 +65,7 @@ function startPolling() {
     const response = await fetch(`/api/jobs/${currentJobId}`);
     const payload = await response.json();
     renderJob(payload);
-    if (["completed", "failed", "waiting_for_manual_action"].includes(payload.status)) {
+    if (["completed", "failed", "waiting_for_manual_action", "cancelled"].includes(payload.status)) {
       clearInterval(pollTimer);
     }
   }, 1600);
@@ -58,8 +78,9 @@ function renderJob(job) {
   progressEl.value = job.processed || 0;
   setMessage(job.message || job.error || "");
   resumeEl.classList.toggle("hidden", job.status !== "waiting_for_manual_action");
-  downloadEl.classList.toggle("hidden", job.status !== "completed");
-  if (job.status === "completed") downloadEl.href = `/api/jobs/${job.id}/result`;
+  
+  if (job.status === "completed" || job.status === "cancelled") { downloadEl.href = `/api/jobs/${job.id}/result`; downloadEl.classList.remove("hidden"); }
+  stopEl.classList.toggle("hidden", !["running", "queued", "waiting_for_manual_action"].includes(job.status));
   resultsEl.innerHTML = (job.recentResults || [])
     .map(
       (row) => `<tr>

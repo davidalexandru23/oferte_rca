@@ -59,7 +59,8 @@ export type JobStatus =
   | "running"
   | "waiting_for_manual_action"
   | "completed"
-  | "failed";
+  | "failed"
+  | "cancelled";
 
 export type JobProgress = {
   id: string;
