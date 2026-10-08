@@ -26,14 +26,29 @@ export async function writeResultsWorkbook(
     });
   });
 
-  const headers = [
-    ...scenarioColumns,
+  // Find existing column count by looking at the first row
+  const firstRow = sheet.getRow(1);
+  let existingColCount = 0;
+  firstRow.eachCell({ includeEmpty: false }, (cell, colNumber) => {
+    if (colNumber > existingColCount) existingColCount = colNumber;
+  });
+  
+  // If we can't determine it, fallback to scenarioColumns.length
+  if (existingColCount === 0) existingColCount = scenarioColumns.length;
+
+  const extraHeaders = [
     ...fixedResultColumns,
     ...offerKeys.map((key) => `pret_${headerNames.get(key)}`)
   ];
 
-  sheet.getRow(1).values = headers;
+  // Append new headers starting from existingColCount + 1
+  extraHeaders.forEach((header, offset) => {
+    firstRow.getCell(existingColCount + offset + 1).value = header;
+  });
+  firstRow.commit();
+
   results.forEach((result, index) => {
+    if (!result) return;
     const row = sheet.getRow(index + 2);
     const byOfferKey = new Map(result.offers.map((offer) => [slug(`${offer.insurer}_${offer.details}`), offer]));
     const values = [
@@ -44,7 +59,7 @@ export async function writeResultsWorkbook(
       ...offerKeys.map((key) => byOfferKey.get(key)?.price ?? "")
     ];
     values.forEach((value, offset) => {
-      row.getCell(scenarioColumns.length + offset + 1).value = value;
+      row.getCell(existingColCount + offset + 1).value = value;
     });
     row.commit();
   });
