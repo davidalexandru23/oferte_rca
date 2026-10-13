@@ -36,6 +36,21 @@ export async function writeResultsWorkbook(
   // If we can't determine it, fallback to scenarioColumns.length
   if (existingColCount === 0) existingColCount = scenarioColumns.length;
 
+  // Check if a bonus_malus column already exists in the original sheet
+  let existingBmCol = -1;
+  for (let c = 1; c <= existingColCount; c++) {
+    const rawVal = firstRow.getCell(c).value;
+    const headerStr = String(rawVal ?? "").trim().toLowerCase();
+    if (["bonus_malus", "bonus-malus", "bonus malus", "clasa b/m", "clasa_b_m", "clasa_bonus_malus"].includes(headerStr)) {
+      existingBmCol = c;
+      break;
+    }
+  }
+
+  const fixedResultColumns = existingBmCol === -1
+    ? ["clasa_bonus_malus", "status", "eroare", "referinta_cotatie", "oferta_minima"]
+    : ["status", "eroare", "referinta_cotatie", "oferta_minima"];
+
   const extraHeaders = [
     ...fixedResultColumns,
     ...offerKeys.map((key) => `pret_${headerNames.get(key)}`)
@@ -50,14 +65,35 @@ export async function writeResultsWorkbook(
   results.forEach((result, index) => {
     if (!result) return;
     const row = sheet.getRow(index + 2);
+
+    // If existing bonus_malus column was found:
+    if (existingBmCol !== -1 && result.bonusMalus) {
+      const cell = row.getCell(existingBmCol);
+      const currentCellVal = String(cell.value ?? "").trim();
+      // If cell was empty, or had a different value, overwrite with new result
+      if (!currentCellVal || currentCellVal.toUpperCase() !== result.bonusMalus.toUpperCase()) {
+        cell.value = result.bonusMalus;
+      }
+    }
+
     const byOfferKey = new Map(result.offers.map((offer) => [slug(`${offer.insurer}_${offer.details}`), offer]));
-    const values = [
-      result.status,
-      result.error ?? "",
-      result.reference ?? "",
-      result.minOffer ?? "",
-      ...offerKeys.map((key) => byOfferKey.get(key)?.price ?? "")
-    ];
+    const values = existingBmCol === -1
+      ? [
+          result.bonusMalus ?? "",
+          result.status,
+          result.error ?? "",
+          result.reference ?? "",
+          result.minOffer ?? "",
+          ...offerKeys.map((key) => byOfferKey.get(key)?.price ?? "")
+        ]
+      : [
+          result.status,
+          result.error ?? "",
+          result.reference ?? "",
+          result.minOffer ?? "",
+          ...offerKeys.map((key) => byOfferKey.get(key)?.price ?? "")
+        ];
+
     values.forEach((value, offset) => {
       row.getCell(existingColCount + offset + 1).value = value;
     });

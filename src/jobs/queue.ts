@@ -165,6 +165,7 @@ async function processJob(job: Job) {
             status: result.status,
             offerCount: result.offers.length,
             minOffer: result.minOffer,
+            bonusMalus: result.bonusMalus,
             error: result.error
           },
           ...job.recentResults

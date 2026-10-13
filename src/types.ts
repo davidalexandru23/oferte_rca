@@ -51,6 +51,7 @@ export type ScenarioResult = {
   error?: string;
   reference?: string;
   minOffer?: string;
+  bonusMalus?: string;
   offers: Offer[];
 };
 
@@ -77,6 +78,7 @@ export type JobProgress = {
     status: ScenarioResult["status"];
     offerCount: number;
     minOffer?: string;
+    bonusMalus?: string;
     error?: string;
   }>;
 };

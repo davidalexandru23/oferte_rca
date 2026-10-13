@@ -24,6 +24,22 @@ export async function runScenario(browser: import("playwright").Browser, row: Sc
 
   try {
     const page = await context.newPage();
+    let interceptedBmClass = "";
+    page.on("response", async (resp) => {
+      try {
+        const url = resp.url();
+        if (url.includes("quote") || url.includes("offers") || url.includes("results")) {
+          const ct = resp.headers()["content-type"] || "";
+          if (ct.includes("application/json")) {
+            const data = await resp.json().catch(() => null);
+            if (data?.quote_response?.response_params?.bm_class) {
+              interceptedBmClass = String(data.quote_response.response_params.bm_class).trim().toUpperCase();
+            }
+          }
+        }
+      } catch {}
+    });
+
     page.on("console", msg => console.log(`BROWSER CONSOLE: ${msg.type()} - ${msg.text()}`));
     page.on("pageerror", err => console.log(`BROWSER ERROR: ${err.message}`));
     await page.goto(config.targetUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
@@ -59,16 +75,21 @@ export async function runScenario(browser: import("playwright").Browser, row: Sc
     console.log("Dumped HTML to", htmlPath);
     await page.screenshot({ path: path.join(jobDir, "last-page.png"), fullPage: true });
     
+    const bonusMalus = await extractBonusMalus(page, interceptedBmClass);
+    console.log("Extracted Bonus-Malus class:", bonusMalus);
+
     const offers = await parseOffers(page);
     if (!offers.length) {
       return {
         status: "failed",
         error: "Nu am gasit oferte in pagina finala. Ruleaza debug si ajusteaza selectorii.",
+        bonusMalus,
         offers: []
       };
     }
     return {
       status: "success",
+      bonusMalus,
       reference: await extractReference(page),
       minOffer: findMinOffer(offers),
       offers
@@ -424,6 +445,43 @@ async function extractInsurer(card: Locator) {
 async function extractReference(page: Page) {
   const body = await page.locator("body").innerText().catch(() => "");
   return body.match(/RCAQ[-\s]?\d+/i)?.[0] ?? "";
+}
+
+async function extractBonusMalus(page: Page, interceptedBmClass?: string): Promise<string> {
+  if (interceptedBmClass && /^[BM][0-8]$/i.test(interceptedBmClass.trim())) {
+    return interceptedBmClass.trim().toUpperCase();
+  }
+
+  // 1. Check DOM elements for bmClass
+  try {
+    const selectors = [
+      "span[id*='bmClass']",
+      ".bm_class b span",
+      ".bm_class b",
+      ".bm_class"
+    ];
+    for (const sel of selectors) {
+      const elements = await page.locator(sel).all();
+      for (const el of elements) {
+        const text = (await el.innerText().catch(() => "")).trim();
+        const match = text.match(/\b([BM][0-8])\b/i);
+        if (match) {
+          return match[1].toUpperCase();
+        }
+      }
+    }
+  } catch {}
+
+  // 2. Full page body text regex fallback
+  try {
+    const bodyText = await page.locator("body").innerText().catch(() => "");
+    const match = bodyText.match(/bonus[- ]?malus[:\s]*([BM][0-8])\b/i) || bodyText.match(/clasa[^:\n\r]*[:\s]*([BM][0-8])\b/i);
+    if (match) {
+      return match[1].toUpperCase();
+    }
+  } catch {}
+
+  return "";
 }
 
 function findMinOffer(offers: Offer[]) {
