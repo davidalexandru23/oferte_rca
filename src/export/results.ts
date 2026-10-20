@@ -11,13 +11,15 @@ export async function writeResultsWorkbook(
   const sheet = workbook.getWorksheet(sheetName) ?? workbook.worksheets[0];
   if (!sheet) throw new Error("Workbook fara worksheet pentru export");
 
+  const validResults = results.filter((r): r is ScenarioResult => Boolean(r && r.offers));
+
   const offerKeys = Array.from(
-    new Set(results.flatMap((result) => result.offers.map((offer) => slug(`${offer.insurer}_${offer.details}`))))
+    new Set(validResults.flatMap((result) => result.offers.map((offer) => slug(`${offer.insurer}_${offer.details}`))))
   ).sort();
   
   // Create a mapping from offerKey to original names for the header
   const headerNames = new Map<string, string>();
-  results.forEach(res => {
+  validResults.forEach(res => {
     res.offers.forEach(o => {
       const key = slug(`${o.insurer}_${o.details}`);
       if (!headerNames.has(key)) {
@@ -63,8 +65,18 @@ export async function writeResultsWorkbook(
   firstRow.commit();
 
   results.forEach((result, index) => {
-    if (!result) return;
     const row = sheet.getRow(index + 2);
+    if (!result) {
+      // Rand neprocesat la momentul opririi jobului
+      const values = existingBmCol === -1
+        ? ["", "neexecutat (job oprit)", "", "", ""]
+        : ["neexecutat (job oprit)", "", "", ""];
+      values.forEach((value, offset) => {
+        row.getCell(existingColCount + offset + 1).value = value;
+      });
+      row.commit();
+      return;
+    }
 
     // If existing bonus_malus column was found:
     if (existingBmCol !== -1 && result.bonusMalus) {

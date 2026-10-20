@@ -76,10 +76,10 @@ resumeEl.addEventListener("click", async () => {
 
 
 stopEl.addEventListener("click", async () => {
+  setMessage("Se oprește jobul și se salvează rezultatele parțiale...");
+  stopEl.disabled = true;
   await fetch("/api/jobs/cancel-active", { method: "POST" });
-  currentJobId = null;
-  clearInterval(pollTimer);
-  renderJob({ status: "cancelled", message: "Toate joburile active au fost oprite." });
+  startPolling();
 });
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -103,12 +103,19 @@ function startPolling() {
   pollTimer = setInterval(async () => {
     if (!currentJobId) return;
     const response = await fetch(`/api/jobs/${currentJobId}`);
+    if (!response.ok) return;
     const payload = await response.json();
     renderJob(payload);
-    if (["completed", "failed", "waiting_for_manual_action", "cancelled"].includes(payload.status)) {
+    if (["completed", "failed", "waiting_for_manual_action"].includes(payload.status)) {
       clearInterval(pollTimer);
+      stopEl.disabled = false;
+    } else if (payload.status === "cancelled") {
+      if (payload.resultPath || payload.processed === 0) {
+        clearInterval(pollTimer);
+        stopEl.disabled = false;
+      }
     }
-  }, 1600);
+  }, 1000);
 }
 
 function renderJob(job) {
@@ -153,8 +160,11 @@ function renderJob(job) {
   }
   
   if (job.status === "completed" || job.status === "cancelled") { 
-    downloadEl.href = `/api/jobs/${job.id}/result`; 
-    downloadEl.classList.remove("hidden"); 
+    if (job.resultPath || job.status === "completed") {
+      downloadEl.href = `/api/jobs/${job.id}/result`; 
+      downloadEl.classList.remove("hidden");
+      downloadEl.textContent = job.status === "cancelled" ? "Descarcă rezultate parțiale" : "Descarcă rezultat";
+    }
   }
   stopEl.classList.remove("hidden"); // Always show stop button just in case
   resultsEl.innerHTML = (job.recentResults || [])

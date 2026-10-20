@@ -149,7 +149,18 @@ async function processJob(job: Job) {
 
         let result: ScenarioResult;
         const { runScenario } = await import("../automation/rcaRunner.js");
-        result = await runScenario(browser, parsed.rows[index], path.join(job.jobDir, `row-${index + 2}`));
+        try {
+          result = await runScenario(browser, parsed.rows[index], path.join(job.jobDir, `row-${index + 2}`));
+        } catch (err) {
+          if (job.cancelled) {
+            break;
+          }
+          result = {
+            status: "failed",
+            error: err instanceof Error ? err.message : "Eroare la procesare",
+            offers: []
+          };
+        }
         
         if (result.status === "waiting_for_manual_action") {
           manualActionTriggered = true;
@@ -180,19 +191,24 @@ async function processJob(job: Job) {
     }
     await Promise.all(workers);
 
+  } catch (err) {
+    if (!job.cancelled) {
+      throw err;
+    }
   } finally {
-    await browser.close();
+    try {
+      await browser.close().catch(() => {});
+    } catch {}
   }
 
   if (manualActionTriggered) {
     return; // Don't export yet
   }
-  if (job.cancelled) {
-    job.status = "cancelled";
-    job.message = "Job oprit manual. Se exporta rezultatele partiale...";
-  }
 
-  job.message = "Se exporta rezultatul";
+  job.message = job.cancelled
+    ? "Job oprit manual. Se exporta rezultatele partiale..."
+    : "Se exporta rezultatul...";
+
   const output = await writeResultsWorkbook(parsed.workbook, parsed.sheetName, job.results);
   const resultPath = path.join(job.jobDir, "rezultate-rca.xlsx");
   await fs.writeFile(resultPath, output);
@@ -203,7 +219,11 @@ async function processJob(job: Job) {
   const mins = Math.floor(durationSec / 60);
   const secs = durationSec % 60;
   const timeFormatted = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
-  if (!job.cancelled) {
+
+  if (job.cancelled) {
+    job.status = "cancelled";
+    job.message = `Job oprit manual în ${timeFormatted}. Rezultatele parțiale (${job.processed}/${job.total}) sunt gata pentru descărcare!`;
+  } else {
     job.status = "completed";
     job.message = `Finalizat în ${timeFormatted}. Rezultatul este gata pentru descărcare!`;
   }
@@ -228,13 +248,16 @@ function publicJob(job: Job): JobProgress {
 
 export async function cancelAllActiveJobs() {
   for (const job of jobs.values()) {
-    if (["running", "queued", "waiting_for_manual_action"].includes(job.status)) {
+    if (["running", "waiting_for_manual_action"].includes(job.status)) {
       job.cancelled = true;
-      job.status = "cancelled";
-      job.message = "Job oprit manual.";
+      job.message = "Se oprește jobul și se salvează rezultatele parțiale...";
       if (job.browser) {
         job.browser.close().catch(() => {});
       }
+    } else if (job.status === "queued") {
+      job.cancelled = true;
+      job.status = "cancelled";
+      job.message = "Job anulat înainte de pornire.";
     }
   }
 }
