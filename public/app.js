@@ -9,10 +9,51 @@ const resultsEl = document.querySelector("#results");
 const downloadEl = document.querySelector("#download");
 const resumeEl = document.querySelector("#resume");
 const stopEl = document.querySelector("#stop");
+const timerBoxEl = document.querySelector("#timer-box");
+const timerTextEl = document.querySelector("#timer-text");
+const timerStatsEl = document.querySelector("#timer-stats");
+
+let liveTimer = null;
+let currentJobStartedAt = null;
+
+function formatDuration(ms) {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const pad = (n) => String(n).padStart(2, "0");
+  if (hours > 0) {
+    return `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+  }
+  return `${pad(minutes)}:${pad(seconds)}`;
+}
+
+function updateLiveClock(startedAt, total, processed) {
+  if (!startedAt) return;
+  const elapsedMs = Date.now() - startedAt;
+  timerTextEl.textContent = `Timp scurs: ${formatDuration(elapsedMs)}`;
+  if (processed > 0 && total > 0) {
+    const mins = elapsedMs / 60000;
+    const speed = Math.round((processed / mins) * 10) / 10;
+    const remaining = total - processed;
+    if (remaining > 0 && speed > 0) {
+      const etaMs = (remaining / (speed / 60)) * 1000;
+      timerStatsEl.textContent = `Viteză: ~${speed} mașini/min | Estimare rămas: ~${formatDuration(etaMs)}`;
+    } else {
+      timerStatsEl.textContent = `Viteză: ~${speed} mașini/min`;
+    }
+  } else {
+    timerStatsEl.textContent = "Se inițializează...";
+  }
+}
 
 
 uploadForm.addEventListener("submit", async (event) => {
   event.preventDefault();
+  clearInterval(liveTimer);
+  liveTimer = null;
+  currentJobStartedAt = null;
+  timerBoxEl.classList.add("hidden");
   const formData = new FormData(uploadForm);
   setMessage("Se incarca fisierul...");
   const response = await fetch("/api/jobs", { method: "POST", body: formData });
@@ -77,8 +118,44 @@ function renderJob(job) {
   progressEl.value = job.processed || 0;
   setMessage(job.message || job.error || "");
   resumeEl.classList.toggle("hidden", job.status !== "waiting_for_manual_action");
+
+  // Timer handling
+  if (job.startedAt) {
+    currentJobStartedAt = job.startedAt;
+    timerBoxEl.classList.remove("hidden");
+
+    if (job.status === "completed") {
+      clearInterval(liveTimer);
+      liveTimer = null;
+      timerBoxEl.classList.add("completed");
+      const duration = job.durationMs || (job.completedAt ? job.completedAt - job.startedAt : Date.now() - job.startedAt);
+      timerTextEl.textContent = `Timp total: ${formatDuration(duration)}`;
+      timerStatsEl.textContent = `Procesare completă (${job.processed}/${job.total} mașini) - Excel pregătit!`;
+    } else if (job.status === "running") {
+      timerBoxEl.classList.remove("completed");
+      updateLiveClock(job.startedAt, job.total || 0, job.processed || 0);
+      if (!liveTimer) {
+        liveTimer = setInterval(() => {
+          updateLiveClock(currentJobStartedAt, progressEl.max, progressEl.value);
+        }, 1000);
+      }
+    } else if (job.status === "cancelled" || job.status === "failed") {
+      clearInterval(liveTimer);
+      liveTimer = null;
+      const duration = job.durationMs || (Date.now() - job.startedAt);
+      timerTextEl.textContent = `Timp scurs până la oprire: ${formatDuration(duration)}`;
+      timerStatsEl.textContent = `Job ${job.status} (${job.processed}/${job.total || 0} mașini)`;
+    }
+  } else {
+    timerBoxEl.classList.add("hidden");
+    clearInterval(liveTimer);
+    liveTimer = null;
+  }
   
-  if (job.status === "completed" || job.status === "cancelled") { downloadEl.href = `/api/jobs/${job.id}/result`; downloadEl.classList.remove("hidden"); }
+  if (job.status === "completed" || job.status === "cancelled") { 
+    downloadEl.href = `/api/jobs/${job.id}/result`; 
+    downloadEl.classList.remove("hidden"); 
+  }
   stopEl.classList.remove("hidden"); // Always show stop button just in case
   resultsEl.innerHTML = (job.recentResults || [])
     .map(

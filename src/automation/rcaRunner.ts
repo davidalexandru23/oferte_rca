@@ -24,6 +24,35 @@ export async function runScenario(browser: import("playwright").Browser, row: Sc
 
   try {
     const page = await context.newPage();
+
+    // Accelerare: Blocare imagini, media, fonturi si trackere pentru economie masiva de timp si memorie
+    await page.route("**/*", (route) => {
+      const req = route.request();
+      const type = req.resourceType();
+      const url = req.url().toLowerCase();
+      if (
+        type === "image" ||
+        type === "media" ||
+        type === "font" ||
+        url.endsWith(".png") ||
+        url.endsWith(".jpg") ||
+        url.endsWith(".jpeg") ||
+        url.endsWith(".webp") ||
+        url.endsWith(".gif") ||
+        url.endsWith(".svg") ||
+        url.endsWith(".woff") ||
+        url.endsWith(".woff2") ||
+        url.endsWith(".ttf") ||
+        url.includes("google-analytics") ||
+        url.includes("googletagmanager") ||
+        url.includes("facebook.net") ||
+        url.includes("hotjar")
+      ) {
+        return route.abort();
+      }
+      return route.continue();
+    });
+
     let interceptedBmClass = "";
     page.on("response", async (resp) => {
       try {
@@ -64,22 +93,21 @@ export async function runScenario(browser: import("playwright").Browser, row: Sc
       console.log("Could not detect offers page elements (.quotes_row.premium_col) after navigation.");
     }
     
-    console.log(`Failed or succeeded. Taking screenshot...`);
-    const modelOptions = await page.evaluate(() => {
-      const s = document.querySelector("select[name='quote_form[vehicle-model]']");
-      return s ? Array.from(s.querySelectorAll("option")).map(o => o.textContent?.trim()) : null;
-    });
-    console.log("Model Options at failure:", modelOptions);
-    const htmlPath = path.join(jobDir, "last-page.html");
-    await fs.writeFile(htmlPath, await page.content().catch(() => ""));
-    console.log("Dumped HTML to", htmlPath);
-    await page.screenshot({ path: path.join(jobDir, "last-page.png"), fullPage: true });
-    
     const bonusMalus = await extractBonusMalus(page, interceptedBmClass);
     console.log("Extracted Bonus-Malus class:", bonusMalus);
 
     const offers = await parseOffers(page);
     if (!offers.length) {
+      // Dump HTML and screenshot only on failure to save time and disk space
+      const modelOptions = await page.evaluate(() => {
+        const s = document.querySelector("select[name='quote_form[vehicle-model]']");
+        return s ? Array.from(s.querySelectorAll("option")).map(o => o.textContent?.trim()) : null;
+      });
+      console.log("Model Options at failure:", modelOptions);
+      const htmlPath = path.join(jobDir, "last-page.html");
+      await fs.writeFile(htmlPath, await page.content().catch(() => ""));
+      await page.screenshot({ path: path.join(jobDir, "last-page.png"), fullPage: true });
+
       return {
         status: "failed",
         error: "Nu am gasit oferte in pagina finala. Ruleaza debug si ajusteaza selectorii.",
@@ -116,6 +144,7 @@ async function fillRcaFlow(page: Page, row: ScenarioRow) {
     await assertNoChallenge(page);
     await acceptEssentialCookies(page);
     
+    const dynamicColumns = new Set(["marca", "judet", "stare_legala", "tip_persoana"]);
     let filledOnThisStep = 0;
     // Try to fill pending columns
     for (const column of [...pendingColumns]) {
@@ -124,8 +153,14 @@ async function fillRcaFlow(page: Page, row: ScenarioRow) {
       if (success) {
         pendingColumns.delete(column);
         filledOnThisStep++;
-        await page.waitForLoadState("networkidle", { timeout: 2000 }).catch(() => undefined);
-        await humanPause(300, 800);
+        if (dynamicColumns.has(column)) {
+          // Doar campurile dinamice in cascada (marca->model, judet->localitate) necesita scurta pauza de retea
+          await page.waitForLoadState("networkidle", { timeout: 1500 }).catch(() => undefined);
+          await humanPause(150, 300);
+        } else {
+          // Campurile statice (VIN, Nume, CNP, Adresa etc.) nu au nevoie de networkidle
+          await humanPause(20, 50);
+        }
       }
     }
     
@@ -149,7 +184,7 @@ async function fillRcaFlow(page: Page, row: ScenarioRow) {
             if (!el.checked) el.checked = true;
           }
         }).catch(() => undefined);
-        await humanPause(200, 500);
+        await humanPause(100, 250);
       }
     }
     const clicked = await clickFirstVisible(page, rcaSelectors.nextButtons);
@@ -157,8 +192,7 @@ async function fillRcaFlow(page: Page, row: ScenarioRow) {
       if (step > 0 && filledOnThisStep === 0) break;
     } else {
       await page.waitForLoadState("domcontentloaded", { timeout: 5000 }).catch(() => undefined);
-      await page.waitForLoadState("networkidle", { timeout: 3000 }).catch(() => undefined);
-      await humanPause(1000, 2000);
+      await humanPause(200, 400);
       
       const liveErrors = await page.locator(".has-error").allInnerTexts().catch(() => []);
       if (liveErrors.length) console.log("LIVE HAS-ERROR TEXTS:", liveErrors.map(e => e.replace(/\s+/g, ' ')));

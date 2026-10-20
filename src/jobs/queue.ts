@@ -109,6 +109,7 @@ function pump() {
 
 async function processJob(job: Job) {
   job.status = "running";
+  job.startedAt = Date.now();
   job.message = "Se parseaza fisierul";
   const parsed = await parseScenarioFile(job.filename, job.input);
   job.workbook = parsed.workbook;
@@ -125,7 +126,7 @@ async function processJob(job: Job) {
     job.results = Array(parsed.rows.length).fill(null);
   }
 
-  const concurrencyLimit = 3;
+  const concurrencyLimit = 6;
   let activeWorkers = 0;
   let nextIndex = 0;
   let manualActionTriggered = false;
@@ -143,8 +144,8 @@ async function processJob(job: Job) {
         job.currentRow = index + 2;
         job.message = `Se proceseaza in paralel (max ${concurrencyLimit})...`;
         
-        // Add a random delay before starting the row to avoid sending all requests at the exact same millisecond
-        await new Promise(r => setTimeout(r, Math.random() * 2000));
+        // Add a small jitter delay before starting the row
+        await new Promise(r => setTimeout(r, Math.random() * 800));
 
         let result: ScenarioResult;
         const { runScenario } = await import("../automation/rcaRunner.js");
@@ -196,9 +197,15 @@ async function processJob(job: Job) {
   const resultPath = path.join(job.jobDir, "rezultate-rca.xlsx");
   await fs.writeFile(resultPath, output);
   job.resultPath = resultPath;
+  job.completedAt = Date.now();
+  job.durationMs = job.completedAt - (job.startedAt ?? job.completedAt);
+  const durationSec = Math.round(job.durationMs / 1000);
+  const mins = Math.floor(durationSec / 60);
+  const secs = durationSec % 60;
+  const timeFormatted = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
   if (!job.cancelled) {
     job.status = "completed";
-    job.message = "Finalizat";
+    job.message = `Finalizat în ${timeFormatted}. Rezultatul este gata pentru descărcare!`;
   }
 }
 
@@ -212,6 +219,9 @@ function publicJob(job: Job): JobProgress {
     message: job.message,
     resultPath: job.resultPath,
     error: job.error,
+    startedAt: job.startedAt,
+    completedAt: job.completedAt,
+    durationMs: job.durationMs,
     recentResults: job.recentResults
   };
 }

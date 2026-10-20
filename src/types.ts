@@ -73,6 +73,9 @@ export type JobProgress = {
   message?: string;
   resultPath?: string;
   error?: string;
+  startedAt?: number;
+  completedAt?: number;
+  durationMs?: number;
   recentResults: Array<{
     row: number;
     status: ScenarioResult["status"];
