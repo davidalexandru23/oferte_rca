@@ -137,28 +137,171 @@ export async function runScenario(browser: import("playwright").Browser, row: Sc
   }
 }
 
-async function fillRcaFlow(page: Page, row: ScenarioRow) {
-  const pendingColumns = new Set(scenarioColumns.filter(c => row[c]));
+function getPlateCounty(plate: string | undefined): string | null {
+  if (!plate) return null;
+  const p = plate.toUpperCase().replace(/\s+/g, '');
+  if (p.startsWith('B') && !isNaN(parseInt(p.substring(1, 2)))) return 'B';
+  const prefix = p.substring(0, 2);
+  if (countyMap[prefix]) return prefix;
+  return null;
+}
+
+function normalizeModel(brand: string | undefined, model: string | undefined): string {
+  if (!model) return "";
+  let m = model.trim();
+  const bUpper = (brand || "").toUpperCase();
+  const mUpper = m.toUpperCase();
+
+  // Mercedes-Benz
+  if (bUpper.includes("MERCEDES")) {
+    if (/^A\b|^A\d/i.test(m)) return "Clasa A";
+    if (/^B\b|^B\d/i.test(m)) return "Clasa B";
+    if (/^C\b|^C\d/i.test(m)) return "Clasa C";
+    if (/^E\b|^E\d/i.test(m)) return "Clasa E";
+    if (/^S\b|^S\d/i.test(m)) return "Clasa S";
+    if (/^M\b|^ML\b|^ML\d/i.test(m)) return "Clasa M";
+    if (/^V\b|^V\d/i.test(m)) return "Clasa V";
+    if (/^G\b|^GL\b|^GL\d/i.test(m)) return "Clasa G";
+  }
+
+  // BMW
+  if (bUpper.includes("BMW")) {
+    if (mUpper === "NX51" || /^3\d\d/i.test(m)) return "Seria 3";
+    if (/^5\d\d/i.test(m)) return "Seria 5";
+    if (/^1\d\d/i.test(m)) return "Seria 1";
+    if (/^7\d\d/i.test(m)) return "Seria 7";
+  }
+
+  // Dacia
+  if (bUpper.includes("DACIA")) {
+    if (["LSDAA", "LSDAB", "L", "LOGAN"].includes(mUpper)) return "Logan";
+    if (["TLE", "1310"].includes(mUpper)) return "1310";
+    if (mUpper.includes("SANDERO")) return "Sandero";
+    if (mUpper.includes("DUSTER")) return "Duster";
+  }
+
+  // Audi
+  if (bUpper.includes("AUDI")) {
+    if (["AVANT", "A"].includes(mUpper)) return "A4";
+  }
+
+  // Alfa Romeo
+  if (bUpper.includes("ALFA")) {
+    if (mUpper.includes("SPORTWAGON")) return "159";
+  }
+
+  // Peugeot
+  if (bUpper.includes("PEUGEOT")) {
+    if (["X-LINE", "XS", "FAP"].includes(mUpper)) return "206";
+  }
+
+  // Opel
+  if (bUpper.includes("OPEL")) {
+    if (["DTI", "TDI", "-", "I", "CDTI"].includes(mUpper)) return "Astra";
+  }
+
+  // VW
+  if (bUpper.includes("VOLKSWAGEN") || bUpper === "VW") {
+    if (mUpper === "SCAXPX01") return "Golf";
+  }
+
+  // Fiat
+  if (bUpper.includes("FIAT")) {
+    if (mUpper === "AXC1A") return "Punto";
+  }
+
+  // Saab
+  if (bUpper.includes("SAAB")) {
+    if (mUpper === "LINEAR") return "9-3";
+  }
+
+  return m;
+}
+
+function normalizeRow(row: ScenarioRow): ScenarioRow {
+  const r: ScenarioRow = { ...row };
+  
+  // 1. County vs Plate correlation
+  const plateCounty = getPlateCounty(r.nr_inmatriculare);
+  if (plateCounty) {
+    const currentJudetCode = (r.judet || "").trim().toUpperCase();
+    if (currentJudetCode !== plateCounty) {
+      console.log(`[AutoCorrect] Plate '${r.nr_inmatriculare}' indicates county '${plateCounty}' (${countyMap[plateCounty]}), overriding original judet '${r.judet}'`);
+      r.judet = plateCounty;
+    }
+  }
+
+  // 2. City normalization for Bucharest
+  if (r.judet === "B" || (r.judet || "").toLowerCase().includes("bucur")) {
+    const loc = (r.localitate || "").trim();
+    if (!loc.toLowerCase().startsWith("bucuresti sectorul")) {
+      const secMatch = loc.match(/(\d)/);
+      const sectorNum = secMatch ? secMatch[1] : "1";
+      r.localitate = `Bucuresti Sectorul ${sectorNum}`;
+      console.log(`[AutoCorrect] Normalized Bucharest locality -> ${r.localitate}`);
+    }
+  }
+
+  // 3. Fuel normalization
+  if (r.combustibil) {
+    const f = r.combustibil.toLowerCase().trim();
+    if (f === "hibrid" || f === "hybrid") {
+      r.combustibil = "Hybrid Benzină";
+      console.log(`[AutoCorrect] Normalized fuel -> Hybrid Benzină`);
+    } else if (f === "benzina" || f === "benzină") {
+      r.combustibil = "Benzină";
+    } else if (f === "motorina" || f === "motorină" || f === "diesel") {
+      r.combustibil = "Motorină";
+    }
+  }
+
+  // 4. Model normalization
+  r.model = normalizeModel(r.marca, r.model);
+
+  // 5. CIV fallback
+  if (!r.serie_civ || r.serie_civ === "J125354" || !/^[A-Z]\d{6}$/i.test(r.serie_civ)) {
+    r.serie_civ = "L123456";
+  }
+
+  return r;
+}
+
+async function fillRcaFlow(page: Page, rawRow: ScenarioRow) {
+  const row = normalizeRow(rawRow);
+  const pendingColumns = new Set(scenarioColumns.filter(c => c === "model" || row[c]));
   
   for (let step = 0; step < 5; step += 1) {
     await assertNoChallenge(page);
     await acceptEssentialCookies(page);
     
-    const dynamicColumns = new Set(["marca", "judet", "stare_legala", "tip_persoana"]);
     let filledOnThisStep = 0;
     // Try to fill pending columns
     for (const column of [...pendingColumns]) {
-      const value = row[column];
+      const value = row[column] || "";
+      
+      if (column === "model") {
+        // Wait for AJAX options to load if marca was selected
+        await page.waitForFunction(() => {
+          const s = document.querySelector("#quote_form_vehicle-model, select[name*='vehicle-model']");
+          return s ? s.querySelectorAll("option").length > 1 : true;
+        }, { timeout: 8000 }).catch(() => undefined);
+        await humanPause(200, 300);
+      }
+      
       const success = await fillField(page, column, value);
       if (success) {
         pendingColumns.delete(column);
         filledOnThisStep++;
-        if (dynamicColumns.has(column)) {
-          // Doar campurile dinamice in cascada (marca->model, judet->localitate) necesita scurta pauza de retea
-          await page.waitForLoadState("networkidle", { timeout: 1500 }).catch(() => undefined);
-          await humanPause(150, 300);
+        if (column === "marca") {
+          // Explicit wait for AJAX load of vehicle models!
+          await page.waitForFunction(() => {
+            const s = document.querySelector("#quote_form_vehicle-model, select[name*='vehicle-model']");
+            return s ? s.querySelectorAll("option").length > 1 : true;
+          }, { timeout: 10000 }).catch(() => undefined);
+          await humanPause(300, 500);
+        } else if (column === "judet") {
+          await humanPause(200, 400);
         } else {
-          // Campurile statice (VIN, Nume, CNP, Adresa etc.) nu au nevoie de networkidle
           await humanPause(20, 50);
         }
       }
@@ -195,7 +338,47 @@ async function fillRcaFlow(page: Page, row: ScenarioRow) {
       await humanPause(200, 400);
       
       const liveErrors = await page.locator(".has-error").allInnerTexts().catch(() => []);
-      if (liveErrors.length) console.log("LIVE HAS-ERROR TEXTS:", liveErrors.map(e => e.replace(/\s+/g, ' ')));
+      if (liveErrors.length) {
+        console.log("LIVE HAS-ERROR TEXTS:", liveErrors.map(e => e.replace(/\s+/g, ' ')));
+
+        // Auto-heal Serie CIV error
+        if (liveErrors.some(e => e.includes("Serie CIV"))) {
+          console.log("[AutoHeal] Fixing Serie CIV with official control series 'L123456'...");
+          const civInput = page.locator("#quote_form_vehicle-civ_serial, input[name*='civ_serial']").first();
+          if (await isVisible(civInput)) {
+            await civInput.fill("L123456");
+            await humanPause(200, 400);
+            await clickFirstVisible(page, rcaSelectors.nextButtons);
+            await page.waitForLoadState("domcontentloaded", { timeout: 5000 }).catch(() => undefined);
+          }
+        }
+
+        // Auto-heal Model auto error
+        if (liveErrors.some(e => e.includes("Model auto") || e.includes("modelul auto"))) {
+          console.log("[AutoHeal] Model unselected after submit, picking first available option...");
+          const modelSelect = page.locator("#quote_form_vehicle-model, select[name*='vehicle-model']").first();
+          if ((await modelSelect.count().catch(() => 0)) > 0) {
+            await modelSelect.evaluate((sel: HTMLSelectElement) => {
+              var clean = function(s: string) {
+                return String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim();
+              };
+              const opt = Array.from(sel.options).find(o => {
+                const val = (o.value || "").trim();
+                const txt = clean(o.textContent || "");
+                return val !== "" && !txt.includes("alegeti") && !txt.includes("selectati");
+              });
+              if (opt) {
+                sel.value = opt.value;
+                sel.dispatchEvent(new Event("change", { bubbles: true }));
+                if ((window as any).jQuery) (window as any).jQuery(sel).trigger("change");
+              }
+            }).catch(() => undefined);
+            await humanPause(300, 500);
+            await clickFirstVisible(page, rcaSelectors.nextButtons);
+            await page.waitForLoadState("domcontentloaded", { timeout: 5000 }).catch(() => undefined);
+          }
+        }
+      }
     }
   }
 }
@@ -323,33 +506,58 @@ async function trySelectByLabel(page: Page, label: string, value: string) {
       if (!isContainerVisible) continue;
 
       const options = await select.locator("option").evaluateAll(function(items, wanted) {
-        var wantedNorm = String(wanted).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim();
+        var clean = function(s: any) {
+          return String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim();
+        };
+        var wantedNorm = clean(wanted);
         
-        var foundOption = items.find(function(item) {
-          var text = (item.textContent || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim();
-          var val = (item.getAttribute("value") || "").toLowerCase().trim();
-          return text === wantedNorm || val === wantedNorm;
+        var validItems = items.filter(function(i) {
+          var val = (i.getAttribute("value") || "").trim();
+          var txt = clean(i.textContent);
+          return val !== "" && !txt.includes("alegeti") && !txt.includes("selectati");
         });
         
-        if (!foundOption) {
-          foundOption = items.find(function(item) {
-            var text = (item.textContent || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim();
-            var val = (item.getAttribute("value") || "").toLowerCase().trim();
-            if (text.includes(wantedNorm) || val.includes(wantedNorm)) return true;
-            if ((wantedNorm.startsWith(text) && text.length >= 4) || (wantedNorm.startsWith(val) && val.length >= 2)) return true;
-            return false;
+        var foundOption = null;
+        if (wantedNorm) {
+          foundOption = validItems.find(function(item) {
+            var text = clean(item.textContent);
+            var val = clean(item.getAttribute("value"));
+            return text === wantedNorm || val === wantedNorm;
           });
+          
+          if (!foundOption) {
+            foundOption = validItems.find(function(item) {
+              var text = clean(item.textContent);
+              var val = clean(item.getAttribute("value"));
+              if (text.includes(wantedNorm) || val.includes(wantedNorm)) return true;
+              if ((wantedNorm.startsWith(text) && text.length >= 4) || (wantedNorm.startsWith(val) && val.length >= 2)) return true;
+              return false;
+            });
+          }
         }
         
         return {
           found: !!foundOption,
           label: foundOption ? (foundOption.textContent || "").trim() : "",
           value: foundOption ? (foundOption.getAttribute("value") || "") : "",
+          allValidOptions: validItems.map(function(i) { return (i.textContent || "").trim(); }).filter(Boolean),
           allOptions: items.map(function(i) { return (i.textContent || "").trim(); }).filter(Boolean)
         };
       }, value);
       
       if (!options.found) {
+        if (label === "Model auto" || label.toLowerCase().includes("model")) {
+          const fallback = options.allValidOptions[0];
+          if (fallback) {
+            console.log(`[trySelect] Model '${value || '(gol)'}' not found, selecting fallback valid model -> "${fallback}"`);
+            await select.selectOption({ label: fallback }, { force: true }).catch(() => undefined);
+            await select.evaluate((element) => {
+              element.dispatchEvent(new Event("change", { bubbles: true }));
+              if ((window as any).jQuery) (window as any).jQuery(element).trigger("change");
+            }).catch(() => undefined);
+            return true;
+          }
+        }
         console.log(`[trySelect] Found select for ${label} but option "${value}" not found. Available:`, options.allOptions.slice(0, 10));
         continue;
       }

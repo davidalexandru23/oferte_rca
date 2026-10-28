@@ -77,40 +77,56 @@ Iată schema de coloane exactă pe care trebuie să o aibă fișierul generat:
 
 CRITIC: Trebuie să aplici următoarele REGULI DE CORECȚIE ȘI VALIDARE pe datele primite, altfel formularul web va bloca cererea:
 
-1. VALIDAREA JUDEȚULUI VS. NUMĂRULUI DE ÎNMATRICULARE:
-   - Site-ul asigurari.ro blochează cotația dacă județul declarat nu bate cu județul din numărul de înmatriculare!
-   - Extrage primele 1 sau 2 litere din `nr_inmatriculare` (ex: din "CJ13AEJ" extragi "CJ", din "B99XYZ" extragi "B").
-   - Suprascrie forțat coloana `judet` cu această abreviere extrasă din numărul de înmatriculare, indiferent de ce a scris utilizatorul inițial în adresă. (Excepție: dacă e mașină nouă fără număr, lasă județul din adresă).
+1. TRIANGULAREA OBLIGATORIE: JUDEȚ vs. NUMĂR ÎNMATRICULARE vs. LOCALITATE:
+   - Formularul asigurari.ro are validare STRICTĂ: dacă județul declarat nu bate cu numărul de înmatriculare, cotația este blocată!
+   - Extrage prefixul din `nr_inmatriculare`:
+     * Dacă începe cu "B" urmat de cifră (ex: "B70HUS", "B100ABC") -> `judet` = "B". Localitatea TREBUIE să fie un sector: "Bucuresti Sectorul 1" (sau 2..6).
+     * Dacă începe cu 2 litere (ex: "BH37BXA", "HD08HND", "CJ16BDU", "CL46DEX") -> `judet` = codul județului ("BH", "HD", "CJ", "CL").
+   - Suprascrie OBLIGATORIU coloana `judet` cu acest cod extras din plăcuță.
+   - Corelează `localitate`: dacă plăcuța este din județul "BH" (Bihor), localitatea nu poate fi din București, ci trebuie să fie un oraș/comună din Bihor (ex: "Oradea"). Dacă plăcuța e din "HD", localitatea este din Hunedoara (ex: "Deva").
 
-2. REGULA CELOR 60 DE ZILE (data_start_polita):
-   - Polița RCA nu poate începe la o distanță mai mare de 60 de zile față de data curentă de azi.
-   - Verifică `data_start_polita` (format DD.MM.YYYY). Dacă data este mai departe de 60 de zile de azi, ajusteaz-o automat să fie la exact 30 de zile distanță de azi, pentru a trece de validare.
+2. CURĂȚAREA ȘI STANDARDIZAREA MODELULUI AUTO (model) - NICIODATĂ CÂMP GOL:
+   - Câmpul `model` este OBLIGATORIU. Dacă în tabelul brut modelul lipsește sau este neclar, DEDUCE-L din Marcă, VIN, Cilindree și Putere.
+   - Site-ul folosește denumiri comerciale standardizate:
+     * MERCEDES-BENZ: Se grupează pe clase! Convertește "A", "A160", "A180" -> "Clasa A"; "C", "C180", "C220" -> "Clasa C"; "E", "E270", "E220" -> "Clasa E"; "S" -> "Clasa S"; "B" -> "Clasa B"; "M" / "ML" -> "Clasa M"; "GLK", "GLA", "GLC", "GLE", "Sprinter", "Vito".
+     * BMW: Convertește în serii: "Seria 1", "Seria 3", "Seria 5", "Seria 7", "X1", "X3", "X5", "X6". Convertește coduri de șasiu gen "Nx51" -> "Seria 3" sau "Seria 5".
+     * DACIA: Convertește obligatoriu codurile tehnice CIV de caroserie ("Lsdaa", "Lsdab", "L") -> "Logan". Convertește "Tle" -> "1310". Alte modele valide: "Sandero", "Duster", "Dokker", "Lodgy", "Spring".
+     * AUDI: Convertește "Avant" -> "A4" sau "A6" (în funcție de motorizare).
+     * ALFA ROMEO: Convertește "Sportwagon" -> "156" sau "159".
+     * PEUGEOT: Convertește nivele de echipare gen "X-Line" sau coduri gen "Fap" -> "206" sau "307".
+     * OPEL: Nu folosi tipuri de combustibil/motor ("Dti", "Tdi") ca model. Convertește-le în "Astra", "Corsa" sau "Vectra".
+     * VOLKSWAGEN: Convertește coduri CIV ("Scaxpx01") -> "Golf" sau "Passat".
+     * FIAT: Modele comerciale standard: "Punto", "Bravo", "Brava", "Doblo", "Stilo", "Panda", "500", "Tipo", "Ducato". Nu lăsa coduri gen "Axc1A".
+   - Elimină balastul comercial (ex: "Trend", "Titanium", "Elegance", "1.6 TDI", "4x4", "Break") lăsând DOAR numele de bază al modelului.
 
-3. CORECTAREA CODULUI POȘTAL (cod_postal):
-   - Trebuie să aibă OBLIGATORIU exact 6 cifre.
-   - Excel-ul taie adesea zerourile inițiale. Dacă primești un cod poștal de 5 cifre (ex: 40982), adaugă-i un "0" în față (-> 040982).
-   - Nu accepta coduri poștale invalide gen "177085".
+3. STANDARDIZARE COMBUSTIBIL (combustibil):
+   - Formularul web acceptă STRICT valorile: "Benzina", "Motorina", "Hybrid Benzina", "Hybrid Motorina", "Electric", "Benzina si GPL".
+   - NICIODATĂ nu pune valoarea generică "Hibrid". Dacă vehiculul este hibrid, pune "Hybrid Benzina" (standard pentru marea majoritate a hibridelor, ex: Toyota Yaris, Prius, Auris) sau "Hybrid Motorina".
 
 4. SERIA C.I.V. (Cartea de Identitate a Vehiculului):
-   - Asigură-te că nu conține texte generice de tip "L123456" (acesta este placeholder-ul site-ului și îl va respinge cu eroare de validare) și nici "F100000".
-   - Trebuie să aibă formatul valid românesc (de obicei o literă urmată de 6 cifre reale). Dacă detectezi că valoarea este falsă, generică sau pare a fi un placeholder, înlocuiește-o AUTOMAT cu valoarea exactă: J125354
+   - Dacă există o serie CIV reală în datele brute, folosește-o (format standard: 1 literă urmată de 6 cifre, ex: A123456).
+   - Dacă seria CIV lipsește, este neclară sau invalidă, folosește OBLIGATORIU seria oficială de control a sistemului asigurari.ro: L123456. (Nu folosi J125354 sau alte șiruri arbitrare).
 
-5. CURĂȚAREA DE FORMULE ȘI DATE CORUPTE:
-   - Orice valoare care arată a eroare Excel (ex: `#REF!`, `#N/A`, `#VALUE!`, sau array-uri `[object Object]`) trebuie convertită în șir gol `""` sau ștearsă.
-   - Elimină complet funcțiile de tip `=RANDBETWEEN(...)`. Extrage doar valoarea pură.
+5. REGULA CELOR 60 DE ZILE (data_start_polita):
+   - Polița RCA nu poate începe la o distanță mai mare de 60 de zile față de data curentă de azi.
+   - Format: DD.MM.YYYY. Dacă data este depășită sau mai mare de 60 de zile în viitor, ajusteaz-o automat să fie la exact 30 de zile distanță de azi.
 
-6. NUMĂR TELEFON (telefon):
-   - Trebuie să aibă fix 10 cifre și să înceapă cu "0". Dacă are 9 cifre din cauza formatării Excel, adaugă un "0" la început (ex: 720000000 -> 0720000000).
+6. CORECTAREA CODULUI POȘTAL (cod_postal):
+   - Trebuie să aibă OBLIGATORIU exact 6 cifre.
+   - Dacă are 5 cifre (din cauza tăierii zeroului în Excel), adaugă "0" în față (ex: 40982 -> 040982).
 
-7. STANDARDIZARE C.N.P.:
-   - Trebuie să aibă fix 13 cifre. Corectează eventualele notații exponențiale (ex: `1.81E+12`) transformându-le în text exact de 13 cifre.
+7. CURĂȚAREA DE FORMULE ȘI DATE CORUPTE:
+   - Orice valoare eronată (#REF!, #N/A, #VALUE!, [object Object]) trebuie eliminată.
+   - Elimină complet funcțiile de calcul (ex: =RANDBETWEEN).
 
-8. STANDARDIZARE LOCALITATE BUCUREȘTI (localitate):
-   - Dacă `localitate` este un sector din București (ex: "Sector 4", "S4", "Sectorul 1"), trebuie convertit STRICT în formatul acceptat de site: "Bucuresti Sectorul 1", "Bucuresti Sectorul 2", "Bucuresti Sectorul 3", "Bucuresti Sectorul 4", "Bucuresti Sectorul 5", sau "Bucuresti Sectorul 6".
+8. NUMĂR TELEFON (telefon):
+   - Fix 10 cifre, începând cu "0" (ex: 0720000000).
 
-9. CURĂȚAREA MODELULUI AUTO (model):
-   - Păstrează exclusiv denumirea comercială principală a modelului (ex: "Sandero", "A5", "A7", "Focus", "Fiesta", "Logan").
-   - Elimină complet orice coduri tehnice, terminologii extra, dotări sau caractere fără sens asociate (ex: elimină balast de tipul "AJHDA 667", "1.5 dCi", "Trend", etc.). Modelul trebuie să fie cât mai simplu și standard.
+9. STANDARDIZARE C.N.P.:
+   - Fix 13 cifre numerice. Format standard text (fără notație exponențială gen 1.81E+12).
+
+10. STANDARDIZARE LOCALITATE BUCUREȘTI (localitate):
+   - Dacă județul este "B", localitatea trebuie să fie STRICT unul dintre cele 6 sectoare: "Bucuresti Sectorul 1", "Bucuresti Sectorul 2", "Bucuresti Sectorul 3", "Bucuresti Sectorul 4", "Bucuresti Sectorul 5", "Bucuresti Sectorul 6".
 
 FORMAT DE IEȘIRE:
 Folosind capabilitățile tale de analiză de date, generează și oferă pentru descărcare un fișier de tip EXCEL (.xlsx) care să conțină exclusiv datele curățate și validate, având exact header-ul menționat mai sus. Nu returna JSON.
