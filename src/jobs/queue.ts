@@ -126,7 +126,7 @@ async function processJob(job: Job) {
     job.results = Array(parsed.rows.length).fill(null);
   }
 
-  const concurrencyLimit = 3;
+  const concurrencyLimit = 2;
   let activeWorkers = 0;
   let nextIndex = 0;
   let manualActionTriggered = false;
@@ -148,7 +148,7 @@ async function processJob(job: Job) {
         job.message = `Se proceseaza in paralel (max ${concurrencyLimit})...`;
         
         // Add a healthy delay before starting each row to prevent rate limiting
-        await new Promise(r => setTimeout(r, 1200 + Math.random() * 1200));
+        await new Promise(r => setTimeout(r, 2000 + Math.random() * 2000));
 
         let result: ScenarioResult;
         const { runScenario } = await import("../automation/rcaRunner.js");
@@ -160,8 +160,11 @@ async function processJob(job: Job) {
           }
           const errMsg = err instanceof Error ? err.message : "Eroare la procesare";
           if (errMsg.includes("Limitare conexiune") || errMsg.includes("prea multe cotații")) {
-            console.warn(`[Queue Worker] Rate limit encountered. Waiting 30s cooldown before next attempt...`);
-            await new Promise(r => setTimeout(r, 30000));
+            console.warn(`[Queue Worker] Rate limit encountered on row ${index + 2}. Pausing job...`);
+            manualActionTriggered = true;
+            job.status = "waiting_for_manual_action";
+            job.message = "Limită de debit pe conexiune (asigurari.ro). Schimbați IP-ul (pe hotspot: activați modul Avion 5 secunde), apoi apăsați 'Reluare'.";
+            return;
           }
           result = {
             status: "failed",

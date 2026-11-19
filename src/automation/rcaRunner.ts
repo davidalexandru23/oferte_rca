@@ -342,8 +342,13 @@ async function fillRcaFlow(page: Page, rawRow: ScenarioRow) {
   const row = normalizeRow(rawRow);
   const pendingColumns = new Set(scenarioColumns.filter(c => c === "model" || row[c]));
   
-  for (let step = 0; step < 5; step += 1) {
+  for (let step = 0; step < 8; step += 1) {
     console.log(`[Flow Step ${step}] Current URL: ${page.url()}`);
+    if (page.url().includes("/results") || page.url().includes("/oferte/")) {
+      console.log("Already on results page, finishing flow.");
+      break;
+    }
+    
     await assertNoChallenge(page);
     await acceptEssentialCookies(page);
     
@@ -585,7 +590,7 @@ async function trySelectByLabel(page: Page, label: string, value: string) {
   const locators = [
     page.getByLabel(label, { exact: true }),
     page.getByLabel(strictRegex),
-    page.locator(`xpath=//*[translate(normalize-space(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZĂÂÎȘŞȚŢ', 'abcdefghijklmnopqrstuvwxyzăâîșşțţ') = "${label.toLowerCase()}" or translate(normalize-space(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZĂÂÎȘŞȚŢ', 'abcdefghijklmnopqrstuvwxyzăâîșşțţ') = "${label.toLowerCase()} *"]/following::select[1]`)
+    page.locator(`xpath=//*[translate(normalize-space(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZĂÂÎȘŞȚŢ', 'abcdefghijklmnopqrstuvwxyzăâîșşțţ') = "${label.toLowerCase()}" or translate(normalize-space(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZĂÂÎȘŞȚŢ', 'abcdefghijklmnopqrstuvwxyzăâîșşțţ') = "${label.toLowerCase()} *"]/ancestor::*[contains(@class, 'form-group') or contains(@class, 'broker_form_field') or contains(@class, 'row') or contains(@class, 'col-')][1]//select`)
   ];
   for (const locator of locators) {
     const count = await locator.count().catch(() => 0);
@@ -678,18 +683,36 @@ async function trySelectByLabel(page: Page, label: string, value: string) {
 async function tryRadioOrCheckbox(page: Page, label: string, value: string) {
   const fieldGroup = page.locator(`label, .broker_form_row_label, .form-label`).filter({ hasText: new RegExp(escapeRegex(label), "i") }).first();
   const container = fieldGroup.locator("xpath=ancestor::*[contains(@class, 'form-group') or contains(@class, 'row') or contains(@class, 'broker_form_field') or contains(@class, 'display_cell') or contains(@class, 'broker_form_field_small')]").first();
-  // Don't match the group label itself if it happens to contain the target value (e.g. "12")
-  const option = container.locator(`label:has(input[type="radio"], input[type="checkbox"])`).filter({ hasText: new RegExp(escapeRegex(value), "i") }).first();
-  if ((await option.count()) === 0) {
-    if ((await fieldGroup.count()) === 0) {
-      console.log(`[tryRadio] FAILED: fieldGroup for label "${label}" not found.`);
-    } else {
-      console.log(`[tryRadio] FAILED: fieldGroup found, but option "${value}" not found in container.`);
-    }
+  
+  if ((await fieldGroup.count()) === 0) {
+    console.log(`[tryRadio] FAILED: fieldGroup for label "${label}" not found.`);
     return false;
   }
-  await option.click({ timeout: 1500, force: true }).catch(() => undefined);
-  return true;
+
+  // 1. Label with text (including diacritic-insensitive)
+  const cleanVal = value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  const option = container.locator(`label`).filter({ hasText: new RegExp(escapeRegex(value), "i") }).first();
+  if ((await option.count()) > 0) {
+    await option.click({ timeout: 1500, force: true }).catch(() => undefined);
+    return true;
+  }
+
+  // 2. Direct radio/checkbox input matching value
+  const inputByVal = container.locator(`input[value="${value}" i], input[value="${value.toLowerCase()}"]`).first();
+  if ((await inputByVal.count()) > 0) {
+    await inputByVal.check({ force: true }).catch(() => undefined);
+    return true;
+  }
+
+  // 3. Funkyradio or adjacent label
+  const funkyLabel = container.locator(`xpath=.//label[contains(translate(normalize-space(), 'ĂÂÎȘŞȚŢ', 'aaișșțț'), '${cleanVal}')]`).first();
+  if ((await funkyLabel.count()) > 0) {
+    await funkyLabel.click({ timeout: 1500, force: true }).catch(() => undefined);
+    return true;
+  }
+
+  console.log(`[tryRadio] FAILED: fieldGroup found for "${label}", but option "${value}" not found in container.`);
+  return false;
 }
 
 function labelProximityInput(page: Page, label: string) {
@@ -702,7 +725,15 @@ function labelProximityInput(page: Page, label: string) {
 }
 
 async function acceptEssentialCookies(page: Page) {
-  for (const selector of rcaSelectors.cookieEssentials) {
+  const cookieButtons = [
+    "#cookiesAccept",
+    "#cookiesReject",
+    "button:has-text('Acceptă toate')",
+    "button:has-text('Doar esențiale')",
+    "a:has-text('Acceptă toate')",
+    "a:has-text('Doar esențiale')"
+  ];
+  for (const selector of cookieButtons) {
     const locator = page.locator(selector).first();
     if (await isVisible(locator)) {
       console.log(`Clicking cookie banner: ${selector}`);
