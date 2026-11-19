@@ -19,11 +19,50 @@ export async function runScenario(browser: import("playwright").Browser, row: Sc
     timezoneId: "Europe/Bucharest",
     viewport: { width: 1365, height: 900 },
     userAgent:
-      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36"
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+    extraHTTPHeaders: {
+      "sec-ch-ua": '"Chromium";v="130", "Google Chrome";v="130", "Not?A_Brand";v="99"',
+      "sec-ch-ua-mobile": "?0",
+      "sec-ch-ua-platform": '"macOS"'
+    }
   });
 
   try {
     const page = await context.newPage();
+    try {
+      const client = await context.newCDPSession(page);
+      await client.send("Network.setUserAgentOverride", {
+        userAgent:
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+        acceptLanguage: "ro-RO",
+        platform: "macOS",
+        userAgentMetadata: {
+          brands: [
+            { brand: "Chromium", version: "130" },
+            { brand: "Google Chrome", version: "130" },
+            { brand: "Not?A_Brand", version: "99" }
+          ],
+          fullVersionList: [
+            { brand: "Chromium", version: "130.0.0.0" },
+            { brand: "Google Chrome", version: "130.0.0.0" },
+            { brand: "Not?A_Brand", version: "99.0.0.0" }
+          ],
+          platform: "macOS",
+          platformVersion: "10.15.7",
+          architecture: "x86",
+          model: "",
+          mobile: false,
+          bitness: "64",
+          wow64: false
+        }
+      });
+    } catch (e) {
+      console.warn("Could not set CDP userAgentOverride:", e);
+    }
+    await page.addInitScript(() => {
+      (window as any).__name = (fn: any) => fn;
+      Object.defineProperty(navigator, "webdriver", { get: () => undefined });
+    });
 
     // Accelerare: Blocare imagini, media, fonturi si trackere pentru economie masiva de timp si memorie
     await page.route("**/*", (route) => {
@@ -55,6 +94,13 @@ export async function runScenario(browser: import("playwright").Browser, row: Sc
 
     let interceptedBmClass = "";
     page.on("response", async (resp) => {
+      if (resp.status() >= 400) {
+        console.log(`[HTTP ERROR ${resp.status()}] ${resp.request().method()} ${resp.url()}`);
+        console.log(`[HTTP ERROR REQ HEADERS]`, JSON.stringify(resp.request().headers(), null, 2));
+        console.log(`[HTTP ERROR RESP HEADERS]`, JSON.stringify(resp.headers(), null, 2));
+        const t = await resp.text().catch(() => "");
+        console.log(`[HTTP ERROR BODY] ${t.slice(0, 300)}`);
+      }
       try {
         const url = resp.url();
         if (url.includes("quote") || url.includes("offers") || url.includes("results")) {
@@ -84,13 +130,21 @@ export async function runScenario(browser: import("playwright").Browser, row: Sc
       console.log("URL wait timeout, checking DOM anyway...");
     }
     
-    // Playwright locators survive navigations and will automatically poll until the element appears
-    const offersVisible = await page.locator('.quotes_row.premium_col').first().waitFor({ state: 'visible', timeout: 30000 })
-      .then(() => true)
-      .catch(() => false);
-      
-    if (!offersVisible) {
-      console.log("Could not detect offers page elements (.quotes_row.premium_col) after navigation.");
+    // Wait until at least one quote is populated with a non-zero price (not "Z" placeholder)
+    const offersVisible = await page.waitForFunction(() => {
+      const rows = document.querySelectorAll('.quotes_row.premium_col');
+      for (const row of Array.from(rows)) {
+        const val = row.getAttribute('value');
+        if (val && val !== 'Z' && !isNaN(parseFloat(val)) && parseFloat(val) > 0) return true;
+      }
+      return false;
+    }, { timeout: 35000 }).then(() => true).catch(() => false);
+
+    if (offersVisible) {
+      // Allow additional insurer responses to settle in
+      await page.waitForTimeout(4000);
+    } else {
+      console.log("Could not detect loaded offers (.quotes_row.premium_col with valid value) after navigation.");
     }
     
     const bonusMalus = await extractBonusMalus(page, interceptedBmClass);
@@ -263,6 +317,24 @@ function normalizeRow(row: ScenarioRow): ScenarioRow {
     r.serie_civ = "L123456";
   }
 
+  // 6. Excel date serial conversion for date fields
+  const dateFields: (keyof ScenarioRow)[] = ["data_permis", "data_start_polita", "prima_inmatriculare"];
+  for (const field of dateFields) {
+    const val = (r[field] || "").trim();
+    if (/^\d{4,5}$/.test(val)) {
+      const serial = parseInt(val, 10);
+      if (serial >= 1000 && serial <= 70000) {
+        const utcDays = Math.floor(serial - 25569);
+        const date = new Date(utcDays * 86400 * 1000);
+        const d = date.getUTCDate().toString().padStart(2, '0');
+        const m = (date.getUTCMonth() + 1).toString().padStart(2, '0');
+        const y = date.getUTCFullYear();
+        r[field] = `${d}.${m}.${y}`;
+        console.log(`[AutoCorrect] Converted Excel date serial '${val}' to date '${r[field]}' for ${field}`);
+      }
+    }
+  }
+
   return r;
 }
 
@@ -271,6 +343,7 @@ async function fillRcaFlow(page: Page, rawRow: ScenarioRow) {
   const pendingColumns = new Set(scenarioColumns.filter(c => c === "model" || row[c]));
   
   for (let step = 0; step < 5; step += 1) {
+    console.log(`[Flow Step ${step}] Current URL: ${page.url()}`);
     await assertNoChallenge(page);
     await acceptEssentialCookies(page);
     
@@ -315,6 +388,10 @@ async function fillRcaFlow(page: Page, rawRow: ScenarioRow) {
     if (await isVisible(consultantaRadio)) await consultantaRadio.click({ force: true }).catch(() => undefined);
     
     // Check terms if present
+    const confirmLabel = page.locator("label[for='quote_form_confirm']");
+    if (await isVisible(confirmLabel)) {
+      await confirmLabel.click({ force: true }).catch(() => undefined);
+    }
     const confirmInput = page.locator("#quote_form_confirm");
     if ((await confirmInput.count().catch(() => 0)) > 0) {
       const isChecked = await confirmInput.isChecked().catch(() => false);
@@ -326,16 +403,32 @@ async function fillRcaFlow(page: Page, rawRow: ScenarioRow) {
             el.click();
             if (!el.checked) el.checked = true;
           }
+          if (el && (window as any).jQuery) {
+            (window as any).jQuery(el).trigger('change');
+          }
         }).catch(() => undefined);
         await humanPause(100, 250);
       }
     }
+    const currentUrl = page.url();
     const clicked = await clickFirstVisible(page, rcaSelectors.nextButtons);
     if (!clicked) {
       if (step > 0 && filledOnThisStep === 0) break;
     } else {
+      await page.waitForURL((url) => url.href !== currentUrl, { timeout: 15000 }).catch(() => undefined);
+      if (page.url().includes("/results") || page.url().includes("/oferte/")) {
+        console.log("Navigated to results page, finishing flow.");
+        break;
+      }
       await page.waitForLoadState("domcontentloaded", { timeout: 5000 }).catch(() => undefined);
       await humanPause(200, 400);
+
+      const rateLimitNotice = page.locator("#quote_limit_notice, [id*='quote_limit']").first();
+      if (await isVisible(rateLimitNotice)) {
+        const noticeText = (await rateLimitNotice.innerText().catch(() => "")).trim();
+        console.warn(`[asigurari.ro Rate Limit]: ${noticeText}`);
+        throw new Error(`Limitare conexiune asigurari.ro: ${noticeText || "Au fost cerute prea multe cotații de pe această conexiune"}.`);
+      }
       
       const liveErrors = await page.locator(".has-error").allInnerTexts().catch(() => []);
       if (liveErrors.length) {
@@ -349,6 +442,8 @@ async function fillRcaFlow(page: Page, rawRow: ScenarioRow) {
             await civInput.fill("L123456");
             await humanPause(200, 400);
             await clickFirstVisible(page, rcaSelectors.nextButtons);
+            await page.waitForURL((url) => url.href !== currentUrl, { timeout: 15000 }).catch(() => undefined);
+            if (page.url().includes("/results") || page.url().includes("/oferte/")) break;
             await page.waitForLoadState("domcontentloaded", { timeout: 5000 }).catch(() => undefined);
           }
         }
@@ -375,6 +470,8 @@ async function fillRcaFlow(page: Page, rawRow: ScenarioRow) {
             }).catch(() => undefined);
             await humanPause(300, 500);
             await clickFirstVisible(page, rcaSelectors.nextButtons);
+            await page.waitForURL((url) => url.href !== currentUrl, { timeout: 15000 }).catch(() => undefined);
+            if (page.url().includes("/results") || page.url().includes("/oferte/")) break;
             await page.waitForLoadState("domcontentloaded", { timeout: 5000 }).catch(() => undefined);
           }
         }
@@ -505,30 +602,29 @@ async function trySelectByLabel(page: Page, label: string, value: string) {
       
       if (!isContainerVisible) continue;
 
-      const options = await select.locator("option").evaluateAll(function(items, wanted) {
-        var clean = function(s: any) {
-          return String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim();
-        };
-        var wantedNorm = clean(wanted);
+      const options = await select.locator("option").evaluateAll((items, wanted) => {
+        const clean = (s: any) =>
+          String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim();
+        const wantedNorm = clean(wanted);
         
-        var validItems = items.filter(function(i) {
-          var val = (i.getAttribute("value") || "").trim();
-          var txt = clean(i.textContent);
+        const validItems = items.filter((i) => {
+          const val = (i.getAttribute("value") || "").trim();
+          const txt = clean(i.textContent);
           return val !== "" && !txt.includes("alegeti") && !txt.includes("selectati");
         });
         
-        var foundOption = null;
+        let foundOption: any = null;
         if (wantedNorm) {
-          foundOption = validItems.find(function(item) {
-            var text = clean(item.textContent);
-            var val = clean(item.getAttribute("value"));
+          foundOption = validItems.find((item) => {
+            const text = clean(item.textContent);
+            const val = clean(item.getAttribute("value"));
             return text === wantedNorm || val === wantedNorm;
           });
           
           if (!foundOption) {
-            foundOption = validItems.find(function(item) {
-              var text = clean(item.textContent);
-              var val = clean(item.getAttribute("value"));
+            foundOption = validItems.find((item) => {
+              const text = clean(item.textContent);
+              const val = clean(item.getAttribute("value"));
               if (text.includes(wantedNorm) || val.includes(wantedNorm)) return true;
               if ((wantedNorm.startsWith(text) && text.length >= 4) || (wantedNorm.startsWith(val) && val.length >= 2)) return true;
               return false;
@@ -540,8 +636,8 @@ async function trySelectByLabel(page: Page, label: string, value: string) {
           found: !!foundOption,
           label: foundOption ? (foundOption.textContent || "").trim() : "",
           value: foundOption ? (foundOption.getAttribute("value") || "") : "",
-          allValidOptions: validItems.map(function(i) { return (i.textContent || "").trim(); }).filter(Boolean),
-          allOptions: items.map(function(i) { return (i.textContent || "").trim(); }).filter(Boolean)
+          allValidOptions: validItems.map((i) => (i.textContent || "").trim()).filter(Boolean),
+          allOptions: items.map((i) => (i.textContent || "").trim()).filter(Boolean)
         };
       }, value);
       

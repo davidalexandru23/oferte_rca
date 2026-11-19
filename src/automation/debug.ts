@@ -14,14 +14,51 @@ type Candidate = {
 };
 
 export async function runDebug() {
-  const browser = await chromium.launch({ headless: config.headless });
+  const browser = await chromium.launch({
+    headless: config.headless,
+    args: ["--disable-blink-features=AutomationControlled"]
+  });
   const page = await browser.newPage({
     locale: "ro-RO",
     timezoneId: "Europe/Bucharest",
     viewport: { width: 1365, height: 900 },
     userAgent:
-      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126 Safari/537.36"
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+    extraHTTPHeaders: {
+      "sec-ch-ua": '"Chromium";v="130", "Google Chrome";v="130", "Not?A_Brand";v="99"',
+      "sec-ch-ua-mobile": "?0",
+      "sec-ch-ua-platform": '"macOS"'
+    }
   });
+
+  try {
+    const client = await page.context().newCDPSession(page);
+    await client.send("Network.setUserAgentOverride", {
+      userAgent:
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+      acceptLanguage: "ro-RO",
+      platform: "macOS",
+      userAgentMetadata: {
+        brands: [
+          { brand: "Chromium", version: "130" },
+          { brand: "Google Chrome", version: "130" },
+          { brand: "Not?A_Brand", version: "99" }
+        ],
+        fullVersionList: [
+          { brand: "Chromium", version: "130.0.0.0" },
+          { brand: "Google Chrome", version: "130.0.0.0" },
+          { brand: "Not?A_Brand", version: "99.0.0.0" }
+        ],
+        platform: "macOS",
+        platformVersion: "10.15.7",
+        architecture: "x86",
+        model: "",
+        mobile: false,
+        bitness: "64",
+        wow64: false
+      }
+    });
+  } catch {}
 
   try {
     await page.goto(config.targetUrl, { waitUntil: "domcontentloaded", timeout: 60000 });

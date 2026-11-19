@@ -98,12 +98,30 @@ function readHeaders(values: ExcelJS.CellValue[] | { [key: string]: ExcelJS.Cell
   return rawHeaders.map(h => aliases[h.toLowerCase()] || h);
 }
 
+function excelSerialToDateString(serial: number): string {
+  const utcDays = Math.floor(serial - 25569);
+  const date = new Date(utcDays * 86400 * 1000);
+  const d = date.getUTCDate().toString().padStart(2, "0");
+  const m = (date.getUTCMonth() + 1).toString().padStart(2, "0");
+  const y = date.getUTCFullYear();
+  return `${d}.${m}.${y}`;
+}
+
 function rowToScenario(headers: string[], values: ExcelJS.CellValue[] | { [key: string]: ExcelJS.CellValue }) {
   const list = Array.isArray(values) ? values.slice(1) : Object.values(values);
   const raw = Object.fromEntries(headers.map((header, index) => [header, normalizeCell(list[index])]));
-  return Object.fromEntries(
-    scenarioColumns.map((column) => [column, normalizeCell(raw[column])])
-  ) as ScenarioRow;
+  const result: Record<string, string> = {};
+  for (const column of scenarioColumns) {
+    let val = normalizeCell(raw[column]);
+    if (column.includes("data") && /^\d{4,5}$/.test(val)) {
+      const num = parseInt(val, 10);
+      if (num >= 1000 && num <= 70000) {
+        val = excelSerialToDateString(num);
+      }
+    }
+    result[column] = val;
+  }
+  return result as ScenarioRow;
 }
 
 function validateHeaders(headers: string[]) {

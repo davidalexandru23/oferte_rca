@@ -73,6 +73,11 @@ export const rcaSelectors = {
         serie_ci: ["Serie BI / CI", "Serie CI", "Serie act"],
         numar_ci: ["Număr BI / CI", "Număr CI", "Numar CI", "Număr act"],
         data_permis: ["Data permis", "Dată obţinere permis auto asigurat/utilizator", "Permis"],
+        conducator_principal_acelasi: [
+            "Conducătorul auto este același cu proprietarul?",
+            "Conducătorul auto este acelaşi cu proprietarul?",
+            "Conducatorul auto este acelasi cu proprietarul?"
+        ],
         bonus_malus: ["Bonus-Malus", "Bonus Malus", "Clasa B/M"],
         data_start_polita: ["Dată start asigurare", "Data început", "Data inceput", "Start poliță", "De la ce dată dorești să înceapă valabilitatea poliței?"],
         durata_luni: ["Durata", "Perioadă de valabilitate", "Perioada"],
